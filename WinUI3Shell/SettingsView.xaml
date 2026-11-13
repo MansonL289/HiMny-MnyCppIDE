@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="WinUI3Shell.SettingsView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <UserControl.Resources>
+        <Style x:Key="SettingsCardStyle" TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="16" />
+        </Style>
+
+        <!-- 代码输入框：等宽字体 + 圆角描边，模仿 Monaco 代码块的观感 -->
+        <Style x:Key="CodeTextBoxStyle" TargetType="TextBox">
+            <Setter Property="AcceptsReturn" Value="True" />
+            <Setter Property="TextWrapping" Value="NoWrap" />
+            <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, 'Microsoft YaHei UI', monospace" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="CornerRadius" Value="8" />
+            <!-- 四边一致的细描边，避免默认模板那种“只有底部一条亮线”的方角观感 -->
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="Background" Value="{ThemeResource ControlFillColorDefaultBrush}" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="MinHeight" Value="120" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+        </Style>
+    </UserControl.Resources>
+
+    <!-- 标题与退出按钮复用主窗口标题栏，这里只保留导航和设置内容 -->
+    <Grid Background="Transparent" KeyDown="Root_KeyDown">
+        <NavigationView
+            x:Name="NavView"
+            IsBackButtonVisible="Collapsed"
+            IsSettingsVisible="False"
+            IsPaneToggleButtonVisible="False"
+            PaneDisplayMode="Left"
+            SelectionChanged="NavView_SelectionChanged">
+            <NavigationView.MenuItems>
+                <NavigationViewItem x:Name="CompileNavItem" Content="编译选项" Tag="compile" IsSelected="True">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE7B8;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="EditorNavItem" Content="编辑器" Tag="editor">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE70F;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
+
+            <Grid>
+                <!-- ===== 编译选项 ===== -->
+                <ScrollViewer x:Name="CompilePane" Padding="16" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer.RenderTransform>
+                        <TranslateTransform />
+                    </ScrollViewer.RenderTransform>
+                    <StackPanel Spacing="14">
+
+                        <TextBlock
+                            Text="编译器"
+                            Style="{StaticResource BodyStrongTextBlockStyle}" />
+
+                        <Border Style="{StaticResource SettingsCardStyle}">
+                            <StackPanel Spacing="10">
+                                <TextBlock
+                                    Text="编译时加入以下命令："
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBox
+                                    x:Name="CompilerFlagsBox"
+                                    Style="{StaticResource CodeTextBoxStyle}"
+                                    AutomationProperties.Name="编译时加入的命令"
+                                    TextChanged="CompilerFlags_TextChanged" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingsCardStyle}">
+                            <StackPanel Spacing="10">
+                                <TextBlock
+                                    Text="在连接器命令行加入以下命令："
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBox
+                                    x:Name="LinkerFlagsBox"
+                                    Style="{StaticResource CodeTextBoxStyle}"
+                                    AutomationProperties.Name="连接器命令行加入的命令"
+                                    TextChanged="LinkerFlags_TextChanged" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- ===== 编辑器 ===== -->
+                <ScrollViewer
+                    x:Name="EditorPane"
+                    Padding="16"
+                    VerticalScrollBarVisibility="Auto"
+                    Visibility="Collapsed">
+                    <ScrollViewer.RenderTransform>
+                        <TranslateTransform />
+                    </ScrollViewer.RenderTransform>
+                    <StackPanel Spacing="14">
+
+                        <TextBlock
+                            Text="新文件"
+                            Style="{StaticResource BodyStrongTextBlockStyle}" />
+
+                        <Border Style="{StaticResource SettingsCardStyle}">
+                            <StackPanel Spacing="10">
+                                <TextBlock
+                                    Text="在新文件中插入以下代码："
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <!-- 模板代码用内嵌 Monaco 编辑，带语法高亮和补全 -->
+                                <Border
+                                    Height="240"
+                                    CornerRadius="8"
+                                    BorderThickness="1"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
+                                    <WebView2 x:Name="TemplateWebView" />
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </NavigationView>
+    </Grid>
+</UserControl>

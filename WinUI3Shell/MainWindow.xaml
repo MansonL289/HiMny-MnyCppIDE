@@ -1,0 +1,435 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="WinUI3Shell.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:WinUI3Shell">
+
+    <Grid x:Name="RootGrid" KeyboardAcceleratorPlacementMode="Hidden">
+        <Grid.KeyboardAccelerators>
+            <!-- 焦点在 XAML（文件树、菜单、欢迎页）时生效；焦点在编辑器里时由页面内 keydown 处理 -->
+            <!-- PlacementMode=Hidden：不在悬停时弹出快捷键提示（RootGrid 铺满窗口，否则哪里都会弹 F12） -->
+            <KeyboardAccelerator Key="F12" Invoked="Shortcut_Invoked" />
+            <KeyboardAccelerator Key="F11" Invoked="Shortcut_Invoked" />
+            <KeyboardAccelerator Key="F10" Invoked="Shortcut_Invoked" />
+            <KeyboardAccelerator Key="N" Modifiers="Control" Invoked="Shortcut_Invoked" />
+            <KeyboardAccelerator Key="O" Modifiers="Control" Invoked="Shortcut_Invoked" />
+            <KeyboardAccelerator Key="S" Modifiers="Control" Invoked="Shortcut_Invoked" />
+            <KeyboardAccelerator Key="S" Modifiers="Control,Shift" Invoked="Shortcut_Invoked" />
+            <KeyboardAccelerator Key="W" Modifiers="Control" Invoked="Shortcut_Invoked" />
+        </Grid.KeyboardAccelerators>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="48" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid.Resources>
+            <Style x:Key="ActivityBarButtonStyle" TargetType="Button">
+                <Setter Property="Width" Value="40" />
+                <Setter Property="Height" Value="40" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="HorizontalAlignment" Value="Center" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="CornerRadius" Value="8" />
+            </Style>
+
+            <Style x:Key="WelcomeActionButtonStyle" TargetType="Button">
+                <Setter Property="Width" Value="360" />
+                <Setter Property="Height" Value="44" />
+                <Setter Property="Padding" Value="16,0" />
+                <Setter Property="HorizontalAlignment" Value="Center" />
+                <Setter Property="HorizontalContentAlignment" Value="Left" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+            </Style>
+        </Grid.Resources>
+
+        <!-- 嵌入式标题栏：整条区域都可拖动窗口，标题栏按钮由系统绘制在右侧 -->
+        <Grid x:Name="AppTitleBar" Background="Transparent" ColumnDefinitions="*,Auto">
+            <!-- 大图标在设置页变成主页按钮；拖动区只保留标题和右侧空白 -->
+            <Grid Grid.Column="0" ColumnDefinitions="Auto,*">
+                <FontIcon
+                    x:Name="TitleAppIcon"
+                    Grid.Column="0"
+                    Glyph="&#xE943;"
+                    Width="40"
+                    Height="32"
+                    Margin="4,0,0,0"
+                    FontSize="16"
+                    VerticalAlignment="Center" />
+                <Button
+                    x:Name="TitleIconButton"
+                    Grid.Column="0"
+                    Width="40"
+                    Height="32"
+                    Margin="4,0,0,0"
+                    Padding="0"
+                    VerticalAlignment="Center"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    CornerRadius="6"
+                    Visibility="Collapsed"
+                    Click="TitleIconButton_Click"
+                    AutomationProperties.Name="主页">
+                    <FontIcon x:Name="TitleIconGlyph" Glyph="&#xE80F;" FontSize="16" />
+                </Button>
+                <Grid
+                    x:Name="TitleBarDragRegion"
+                    Grid.Column="1"
+                    Background="Transparent">
+                    <TextBlock
+                        x:Name="TitleTextBlock"
+                        Text="MnyC++ IDE"
+                        Margin="8,0,0,0"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        FontWeight="SemiBold"
+                        VerticalAlignment="Center" />
+                </Grid>
+            </Grid>
+
+            <StackPanel
+                Grid.Column="1"
+                Orientation="Horizontal"
+                VerticalAlignment="Center"
+                Spacing="2"
+                Margin="0,0,4,0">
+                <Button
+                    x:Name="SettingsButton"
+                    Width="36"
+                    Height="32"
+                    Padding="0"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Click="SettingsButton_Click"
+                    ToolTipService.ToolTip="设置">
+                    <FontIcon x:Name="SettingsButtonIcon" Glyph="&#xE713;" FontSize="16" />
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <!-- 顶栏：菜单栏 + 右侧运行按钮（只有当前文件是 C/C++ 源码时才显示） -->
+        <Grid x:Name="MenuBarArea" Grid.Row="1" ColumnDefinitions="*,Auto">
+            <MenuBar Grid.Column="0" Background="Transparent">
+            <MenuBarItem Title="文件">
+                <MenuFlyoutItem Text="新建文件" Tag="cmd:newUntitled" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+N" />
+                <MenuFlyoutItem Text="打开文件…" Tag="cmd:openFile" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+O" />
+                <MenuFlyoutItem Text="打开文件夹…" Tag="cmd:openFolder" Click="MenuCommand_Click" />
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="保存" Tag="cmd:requestSave" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+S" />
+                <MenuFlyoutItem Text="另存为…" Tag="cmd:saveAs" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+Shift+S" />
+                <MenuFlyoutItem Text="关闭文件" Tag="cmd:closeActive" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+W" />
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="退出" Tag="cmd:exit" Click="MenuCommand_Click" />
+            </MenuBarItem>
+
+            <MenuBarItem Title="编辑">
+                <MenuFlyoutItem Text="撤销" Tag="action:undo" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+Z" />
+                <MenuFlyoutItem Text="重做" Tag="action:redo" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+Y" />
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="剪切" Tag="action:editor.action.clipboardCutAction" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+X" />
+                <MenuFlyoutItem Text="复制" Tag="action:editor.action.clipboardCopyAction" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+C" />
+                <MenuFlyoutItem Text="粘贴" Tag="action:editor.action.clipboardPasteAction" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+V" />
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="查找" Tag="action:actions.find" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+F" />
+                <MenuFlyoutItem Text="替换" Tag="action:editor.action.startFindReplaceAction" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+H" />
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="注释行" Tag="action:editor.action.commentLine" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+/" />
+                <MenuFlyoutItem Text="块注释" Tag="action:editor.action.blockComment" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Shift+Alt+A" />
+                <MenuFlyoutItem Text="添加行注释" Tag="action:editor.action.addCommentLine" Click="MenuCommand_Click" />
+                <MenuFlyoutItem Text="移除行注释" Tag="action:editor.action.removeCommentLine" Click="MenuCommand_Click" />
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="格式化文档" Tag="action:editor.action.formatDocument" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Shift+Alt+F" />
+                <MenuFlyoutItem Text="格式化选区" Tag="action:editor.action.formatSelection" Click="MenuCommand_Click" />
+                <MenuFlyoutItem Text="快速修复" Tag="action:editor.action.quickFix" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+." />
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="增加缩进" Tag="action:editor.action.indentLines" Click="MenuCommand_Click" />
+                <MenuFlyoutItem Text="减少缩进" Tag="action:editor.action.outdentLines" Click="MenuCommand_Click" />
+                <MenuFlyoutItem Text="上移行" Tag="action:editor.action.moveLinesUpAction" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Alt+↑" />
+                <MenuFlyoutItem Text="下移行" Tag="action:editor.action.moveLinesDownAction" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Alt+↓" />
+                <MenuFlyoutItem Text="向上复制行" Tag="action:editor.action.copyLinesUpAction" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Shift+Alt+↑" />
+                <MenuFlyoutItem Text="向下复制行" Tag="action:editor.action.copyLinesDownAction" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Shift+Alt+↓" />
+                <MenuFlyoutItem Text="删除行" Tag="action:editor.action.deleteLines" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+Shift+K" />
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="行升序" Tag="action:editor.action.sortLinesAscending" Click="MenuCommand_Click" />
+                <MenuFlyoutItem Text="行降序" Tag="action:editor.action.sortLinesDescending" Click="MenuCommand_Click" />
+                <MenuFlyoutItem Text="去除行尾空白" Tag="action:editor.action.trimTrailingWhitespace" Click="MenuCommand_Click" />
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="转为大写" Tag="action:editor.action.transformToUppercase" Click="MenuCommand_Click" />
+                <MenuFlyoutItem Text="转为小写" Tag="action:editor.action.transformToLowercase" Click="MenuCommand_Click" />
+                <MenuFlyoutItem Text="首字母大写" Tag="action:editor.action.transformToTitlecase" Click="MenuCommand_Click" />
+            </MenuBarItem>
+
+            <MenuBarItem Title="选择">
+                <MenuFlyoutItem Text="全选" Tag="action:editor.action.selectAll" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+A" />
+                <MenuFlyoutItem Text="选择所有匹配项" Tag="action:editor.action.selectHighlights" Click="MenuCommand_Click" />
+                <MenuFlyoutItem Text="更改所有匹配项" Tag="action:editor.action.changeAll" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+F2" />
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="在上方添加光标" Tag="action:editor.action.insertCursorAbove" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+Alt+↑" />
+                <MenuFlyoutItem Text="在下方添加光标" Tag="action:editor.action.insertCursorBelow" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+Alt+↓" />
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="扩展选区" Tag="action:editor.action.smartSelect.expand" Click="MenuCommand_Click" />
+                <MenuFlyoutItem Text="收缩选区" Tag="action:editor.action.smartSelect.shrink" Click="MenuCommand_Click" />
+            </MenuBarItem>
+
+            <MenuBarItem Title="查看">
+                <MenuFlyoutItem Text="终端" Tag="cmd:toggleTerminal" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+`" />
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="转到行…" Tag="action:editor.action.gotoLine" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+G" />
+                <MenuFlyoutItem Text="大纲" Tag="action:editor.action.quickOutline" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+Shift+O" />
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="转到定义" Tag="action:editor.action.revealDefinition" Click="MenuCommand_Click" />
+                <MenuFlyoutItem Text="查看定义预览" Tag="action:editor.action.peekDefinition" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Alt+F12" />
+                <MenuFlyoutItem Text="查找引用" Tag="action:editor.action.revealReferences" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Shift+F12" />
+                <MenuFlyoutItem Text="重命名符号" Tag="action:editor.action.rename" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="F2" />
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="折叠全部" Tag="action:editor.action.foldAll" Click="MenuCommand_Click" />
+                <MenuFlyoutItem Text="展开全部" Tag="action:editor.action.unfoldAll" Click="MenuCommand_Click" />
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="自动换行" Tag="cmd:toggleWordWrap" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Alt+Z" />
+                <MenuFlyoutItem Text="迷你地图" Tag="cmd:toggleMinimap" Click="MenuCommand_Click" />
+                <MenuFlyoutItem Text="增大字号" Tag="cmd:fontSizeUp" Click="MenuCommand_Click" />
+                <MenuFlyoutItem Text="减小字号" Tag="cmd:fontSizeDown" Click="MenuCommand_Click" />
+                <MenuFlyoutItem Text="重置字号" Tag="cmd:fontSizeReset" Click="MenuCommand_Click" />
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="显示建议" Tag="action:editor.action.triggerSuggest" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+Space" />
+                <MenuFlyoutItem Text="参数提示" Tag="action:editor.action.triggerParameterHints" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+Shift+Space" />
+            </MenuBarItem>
+
+            <!-- 与上面几个菜单项使用同一套 MenuBarItem 样式，保持在菜单栏最右侧 -->
+            <MenuBarItem x:Name="TerminalMenuItem" Title="终端">
+                <MenuFlyoutItem Text="打开/收起面板" Tag="cmd:toggleTerminal" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+`" />
+                <MenuFlyoutItem Text="新建终端" Tag="cmd:newTerminal" Click="MenuCommand_Click" />
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="清空终端" Tag="cmd:clearTerminal" Click="MenuCommand_Click" />
+                <MenuFlyoutItem Text="关闭所有终端" Tag="cmd:closeAllTerminals" Click="MenuCommand_Click" />
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="隐藏面板" Tag="cmd:hideTerminalPanel" Click="MenuCommand_Click" />
+            </MenuBarItem>
+        </MenuBar>
+
+            <StackPanel
+                Grid.Column="1"
+                Orientation="Horizontal"
+                Spacing="8"
+                Margin="0,0,12,0"
+                VerticalAlignment="Center">
+                <DropDownButton
+                    x:Name="RunDropDownButton"
+                    Height="30"
+                    Padding="10,0"
+                    Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                    BorderThickness="0"
+                    Visibility="Collapsed"
+                    AutomationProperties.Name="运行"
+                    ToolTipService.ToolTip="编译与运行">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE768;" FontSize="14" />
+                        <TextBlock Text="运行" FontSize="12" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <DropDownButton.Flyout>
+                        <MenuFlyout Placement="BottomEdgeAlignedRight">
+                            <MenuFlyoutItem Text="编译" Tag="cmd:build" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="F12" />
+                            <MenuFlyoutItem Text="运行" Tag="cmd:run" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="F10" />
+                            <MenuFlyoutItem Text="编译与运行" Tag="cmd:buildRun" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="F11" />
+                            <MenuFlyoutSeparator />
+                            <MenuFlyoutItem Text="打开终端" Tag="cmd:toggleTerminal" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+`" />
+                        </MenuFlyout>
+                    </DropDownButton.Flyout>
+                </DropDownButton>
+            </StackPanel>
+        </Grid>
+
+        <!-- 左侧活动栏（五个按钮）+ 可收起侧栏 + 编辑器 -->
+        <Grid x:Name="MainContentArea" Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="48" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel
+                x:Name="ActivityBar"
+                Grid.Column="0"
+                Padding="0,8,0,0"
+                Spacing="4"
+                VerticalAlignment="Top">
+                <Button
+                    x:Name="ExplorerButton"
+                    Tag="explorer"
+                    Style="{StaticResource ActivityBarButtonStyle}"
+                    Click="ActivityButton_Click"
+                    AutomationProperties.Name="资源管理器"
+                    ToolTipService.ToolTip="资源管理器">
+                    <FontIcon Glyph="&#xE8B7;" FontSize="18" />
+                </Button>
+                <Button
+                    x:Name="SearchButton"
+                    Tag="search"
+                    Style="{StaticResource ActivityBarButtonStyle}"
+                    Click="ActivityButton_Click"
+                    AutomationProperties.Name="搜索"
+                    ToolTipService.ToolTip="搜索">
+                    <FontIcon Glyph="&#xE721;" FontSize="18" />
+                </Button>
+                <Button
+                    x:Name="SourceControlButton"
+                    Tag="scm"
+                    Style="{StaticResource ActivityBarButtonStyle}"
+                    Click="ActivityButton_Click"
+                    AutomationProperties.Name="源代码管理"
+                    ToolTipService.ToolTip="源代码管理">
+                    <FontIcon Glyph="&#xE8C8;" FontSize="18" />
+                </Button>
+                <Button
+                    x:Name="RunButton"
+                    Tag="run"
+                    Style="{StaticResource ActivityBarButtonStyle}"
+                    Click="ActivityButton_Click"
+                    AutomationProperties.Name="运行和调试"
+                    ToolTipService.ToolTip="运行和调试">
+                    <FontIcon Glyph="&#xE768;" FontSize="18" />
+                </Button>
+            </StackPanel>
+
+            <Grid x:Name="SidePanel" Grid.Column="1" Width="220" Visibility="Collapsed">
+                <Grid x:Name="ExplorerPanel">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Button
+                        x:Name="OpenFolderButton"
+                        Grid.Row="0"
+                        Margin="8"
+                        HorizontalAlignment="Stretch"
+                        Content="打开文件夹"
+                        Click="OpenFolderButton_Click" />
+                    <TextBlock
+                        x:Name="ExplorerFolderName"
+                        Grid.Row="0"
+                        Margin="12,10,12,6"
+                        FontSize="12"
+                        FontWeight="SemiBold"
+                        Opacity="0.8"
+                        TextTrimming="CharacterEllipsis"
+                        Visibility="Collapsed" />
+                    <TreeView
+                        x:Name="FileTree"
+                        Grid.Row="1"
+                        SelectionMode="Single"
+                        ItemInvoked="FileTree_ItemInvoked"
+                        Expanding="FileTree_Expanding">
+                        <!-- 节点模式里默认项模板会把 TreeViewNode 对象本身当文本显示，
+                             必须指定用节点的 Content（图标 + 文件名）来渲染 -->
+                        <TreeView.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel
+                                    Orientation="Horizontal"
+                                    Spacing="8"
+                                    ToolTipService.ToolTip="{Binding Content.Path}">
+                                    <FontIcon Glyph="{Binding Content.Glyph}" FontSize="14" />
+                                    <TextBlock
+                                        Text="{Binding Content.Name}"
+                                        VerticalAlignment="Center"
+                                        TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </TreeView.ItemTemplate>
+                    </TreeView>
+                </Grid>
+
+                <Grid x:Name="PlaceholderPanel" Visibility="Collapsed">
+                    <TextBlock
+                        x:Name="PlaceholderText"
+                        Margin="16,12,16,16"
+                        TextWrapping="Wrap"
+                        Opacity="0.6" />
+                </Grid>
+            </Grid>
+
+            <Grid Grid.Column="2" Padding="8,0,0,0">
+                <!-- 整个编程界面（标签栏 + 编辑器 + 终端）做成一张圆角卡片 -->
+                <Border
+                    Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
+                    BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="12,12,0,12">
+                    <WebView2 x:Name="EditorWebView" />
+                </Border>
+
+                <!-- 欢迎页：没有打开文件时显示五个入口按钮（同样做成圆角卡片） -->
+                <Border
+                    x:Name="WelcomeOverlay"
+                    Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
+                    CornerRadius="12"
+                    Visibility="Collapsed">
+                    <StackPanel
+                        x:Name="WelcomeContent"
+                        MaxWidth="420"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="10"
+                        Opacity="0">
+                        <StackPanel.RenderTransform>
+                            <CompositeTransform x:Name="WelcomeTransform" TranslateY="12" />
+                        </StackPanel.RenderTransform>
+
+                        <TextBlock
+                            Text="MnyC++ IDE"
+                            FontSize="24"
+                            FontWeight="SemiBold"
+                            Margin="0,0,0,2" />
+                        <TextBlock
+                            Text="开始使用编辑器"
+                            FontSize="12"
+                            Opacity="0.6"
+                            Margin="0,0,0,10" />
+
+                        <Button Style="{StaticResource WelcomeActionButtonStyle}" Tag="w:openFolder" Click="WelcomeAction_Click" AutomationProperties.Name="打开文件夹">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <FontIcon Glyph="&#xE8B7;" FontSize="16" />
+                                <TextBlock Text="打开文件夹" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Button Style="{StaticResource WelcomeActionButtonStyle}" Tag="w:openFile" Click="WelcomeAction_Click" AutomationProperties.Name="打开文件">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <FontIcon Glyph="&#xE8E5;" FontSize="16" />
+                                <TextBlock Text="打开文件" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Button Style="{StaticResource WelcomeActionButtonStyle}" Tag="w:newFile" Click="WelcomeAction_Click" AutomationProperties.Name="新建 C++ 文件">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <FontIcon Glyph="&#xE710;" FontSize="16" />
+                                <TextBlock Text="新建 C++ 文件（Ctrl+N）" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Button Style="{StaticResource WelcomeActionButtonStyle}" Tag="w:settings" Click="WelcomeAction_Click" AutomationProperties.Name="设置">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <FontIcon Glyph="&#xE713;" FontSize="16" />
+                                <TextBlock Text="设置" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <!-- 设置面板：先让主页面内容淡出，再让整页从窗口右侧滑入；不是弹出浮层。 -->
+        <Grid
+            x:Name="SettingsOverlay"
+            Grid.Row="1"
+            Grid.RowSpan="2"
+            Visibility="Collapsed">
+            <local:SettingsView x:Name="SettingsViewControl">
+                <local:SettingsView.RenderTransform>
+                    <TranslateTransform x:Name="SettingsTransform" />
+                </local:SettingsView.RenderTransform>
+            </local:SettingsView>
+        </Grid>
+    </Grid>
+</Window>

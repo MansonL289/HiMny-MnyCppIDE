@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { color-scheme: light dark; }
+  /* html 透明，body 自己画圆角：这样编辑器卡片的四角不会被 WebView2 的方形表面盖住 */
+  html { background: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden;
+    font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif; }
+  body {
+    display: flex; flex-direction: column; background: #f3f3f3;
+    border-radius: 11px 11px 0 11px; overflow: hidden;
+  }
+  #tabs {
+    display: flex; align-items: stretch; flex: 0 0 auto;
+    height: 34px; overflow-x: auto; overflow-y: hidden;
+    background: #f3f3f3; border-bottom: 1px solid #dcdcdc;
+    border-radius: 11px 11px 0 0;
+  }
+  #tabs::-webkit-scrollbar { height: 4px; }
+  .tab {
+    display: flex; align-items: center; gap: 8px; padding: 0 8px 0 12px;
+    font-size: 12px; color: #333; border-right: 1px solid #dcdcdc;
+    cursor: pointer; user-select: none; white-space: nowrap; max-width: 240px;
+  }
+  .tab.active { background: #fff; }
+  .tab .name { overflow: hidden; text-overflow: ellipsis; }
+  .tab .dot { color: #d13438; font-size: 10px; }
+  .tab .close {
+    width: 18px; height: 18px; line-height: 17px; text-align: center;
+    border-radius: 3px; opacity: .55; font-size: 12px;
+  }
+  .tab .close:hover { background: #e1e1e1; opacity: 1; }
+  #largeFileNotice {
+    display: none; flex: 0 0 auto; padding: 7px 12px;
+    color: #5d4300; background: #fff4ce; border-bottom: 1px solid #e5dfa5;
+    font-size: 12px; user-select: none;
+  }
+  #largeFileNotice.visible { display: block; }
+  /* 编辑器区域铺满整个圆角卡片（圆角由 XAML 那边的 Border 做） */
+  #editor {
+    flex: 1 1 auto; min-height: 0;
+    background: #fff; overflow: hidden;
+  }
+  /* 面板折叠时编辑器是整个卡片的底边，需要自己画底部圆角；展开时交给 #panel */
+  body:has(#panel.collapsed) #editor {
+    border-bottom-left-radius: 11px;
+  }
+
+  /* 大文件 Alt+F 局部着色：只通过装饰器改颜色，不开启全文语言模式 */
+  .mny-vh-comment { color: #6a737d !important; font-style: italic; }
+  .mny-vh-keyword { color: #af00db !important; }
+  .mny-vh-string { color: #a31515 !important; }
+  .mny-vh-include, .mny-vh-escape { color: #0451a5 !important; }
+  .mny-vh-number { color: #098658 !important; }
+  .mny-vh-type { color: #267f99 !important; }
+  .mny-vh-operator { color: #0451a5 !important; }
+  .mny-vh-delimiter { color: #333 !important; }
+
+  /* ---- 终端面板（仿 VS Code 底部面板） ---- */
+  #panel {
+    flex: 0 0 auto; height: 220px; display: flex; flex-direction: column;
+    border-top: 1px solid #dcdcdc; background: #fff;
+    border-radius: 0 0 0 11px;
+    overflow: hidden;
+  }
+  #panel.collapsed { display: none; }
+  .panel-header {
+    display: flex; align-items: center; gap: 2px;
+    height: 32px; padding: 0 8px 0 12px; flex: 0 0 auto;
+    border-bottom: 1px solid #e5e5e5; user-select: none;
+  }
+  .panel-title {
+    font-size: 11px; letter-spacing: .8px; text-transform: uppercase;
+    color: #555; margin-right: auto;
+  }
+  .panel-btn {
+    width: 26px; height: 24px; border: none; border-radius: 4px;
+    background: transparent; color: #555; font-size: 13px; line-height: 1;
+    cursor: pointer; font-family: inherit;
+  }
+  .panel-btn:hover { background: #e1e1e1; }
+  .panel-main { flex: 1 1 auto; display: flex; min-height: 0; }
+  .term-tabs {
+    width: 140px; flex: 0 0 auto; overflow-y: auto;
+    border-right: 1px solid #e5e5e5; padding: 4px;
+  }
+  .term-tab {
+    display: flex; align-items: center; padding: 3px 6px;
+    border-radius: 4px; font-size: 12px; color: #333;
+    cursor: pointer; user-select: none;
+  }
+  .term-tab.active { background: #e4e4e4; }
+  .term-tab .tname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .term-tab .tkill { width: 18px; text-align: center; border-radius: 3px; opacity: 0; }
+  .term-tab:hover .tkill { opacity: .6; }
+  .term-tab .tkill:hover { background: #d0d0d0; opacity: 1; }
+  .term-body { flex: 1 1 auto; min-width: 0; position: relative; }
+  .term-view {
+    position: absolute; inset: 0; display: none; flex-direction: column;
+    background: #fff; color: #1e1e1e;
+  }
+  .term-view.active { display: flex; }
+  .term-output {
+    flex: 1 1 auto; margin: 0; padding: 6px 10px; overflow-y: auto;
+    font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; line-height: 1.45;
+    white-space: pre-wrap; word-break: break-all; user-select: text; cursor: text;
+  }
+  .term-input-row { display: flex; align-items: center; gap: 6px; padding: 2px 10px 6px; }
+  .term-input-row .prompt {
+    color: #0078d4; font-family: Consolas, monospace; font-size: 12px; flex: 0 0 auto;
+  }
+  .term-input {
+    flex: 1 1 auto; border: none; outline: none; background: transparent; color: inherit;
+    font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; padding: 0;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    /* 与编辑器底色一致，圆角切角处不会露出明显色差 */
+    body { background: #1e2027; }
+    #tabs { background: #1f1f1f; border-bottom-color: #333; }
+    #editor { background: #1e2027; }
+    #largeFileNotice { color: #f8e3a1; background: #3b321c; border-bottom-color: #5c4d24; }
+    .mny-vh-comment { color: #5c6370 !important; }
+    .mny-vh-keyword { color: #c678dd !important; }
+    .mny-vh-string { color: #98c379 !important; }
+    .mny-vh-include { color: #61afef !important; }
+    .mny-vh-escape { color: #56b6c2 !important; }
+    .mny-vh-number { color: #d19a66 !important; }
+    .mny-vh-type { color: #e5c07b !important; }
+    .mny-vh-operator { color: #56b6c2 !important; }
+    .mny-vh-delimiter { color: #a6adba !important; }
+    .tab { color: #ddd; border-right-color: #333; }
+    .tab.active { background: #252526; }
+    .tab .close:hover { background: #3a3a3a; }
+
+    #panel { background: #1e1e1e; border-top-color: #333; }
+    .panel-header { border-bottom-color: #333; }
+    .panel-title, .panel-btn { color: #aaa; }
+    .panel-btn:hover { background: #333; }
+    .term-tabs { border-right-color: #333; }
+    .term-tab { color: #ccc; }
+    .term-tab.active { background: #37373d; }
+    .term-tab .tkill:hover { background: #4a4a4a; }
+    .term-view { background: #1e1e1e; color: #d4d4d4; }
+    .term-input-row .prompt { color: #4ec9b0; }
+  }
+</style>
+</head>
+<body>
+  <div id="tabs"></div>
+  <div id="largeFileNotice" role="status" title="按住 Alt+F 可临时高亮可见区域及上下 5 行">文件较大，已开启大文件模式，部分功能缺失。</div>
+  <div id="editor"></div>
+  <div id="panel" class="collapsed">
+    <div class="panel-header">
+      <span class="panel-title">终端</span>
+      <button class="panel-btn" id="termNew" title="新建终端">＋</button>
+      <button class="panel-btn" id="termHide" title="折叠面板">∨</button>
+      <button class="panel-btn" id="termClose" title="关闭面板（终止全部终端）">×</button>
+    </div>
+    <div class="panel-main">
+      <div class="term-tabs" id="termTabs"></div>
+      <div class="term-body" id="termBody"></div>
+    </div>
+  </div>
+  <script src="./vs/loader.js"></script>
+  <script>
+    // 动态加载并带时间戳，避免 WebView2 使用旧的缓存脚本
+    var script = document.createElement('script');
+    script.src = './editor.js?v=' + Date.now();
+    document.body.appendChild(script);
+  </script>
+</body>
+</html>

@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body { background: #1e2027; }
+  @media (prefers-color-scheme: light) { body { background: #ffffff; } }
+  #editor { position: absolute; inset: 0; }
+</style>
+</head>
+<body>
+  <div id="editor"></div>
+  <script src="./vs/loader.js"></script>
+  <script>
+    require.config({ paths: { vs: './vs' } });
+
+    require(['vs/editor/editor.main'], function () {
+      'use strict';
+
+      const host = (window.chrome && window.chrome.webview) ? window.chrome.webview : null;
+      const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+      /* 与主编辑器保持一致的配色（One Dark 风格） */
+      monaco.editor.defineTheme('mny-dark', {
+        base: 'vs-dark',
+        inherit: true,
+        rules: [
+          { token: 'comment', foreground: '5c6370', fontStyle: 'italic' },
+          { token: 'keyword', foreground: 'c678dd' },
+          { token: 'keyword.directive', foreground: 'c678dd' },
+          { token: 'string', foreground: '98c379' },
+          { token: 'string.escape', foreground: '56b6c2' },
+          { token: 'string.include', foreground: '61afef' },
+          { token: 'string.include.identifier', foreground: '61afef' },
+          { token: 'number', foreground: 'd19a66' },
+          { token: 'typeid', foreground: 'e5c07b' },
+          { token: 'typename', foreground: 'e5c07b' },
+          { token: 'typedef', foreground: 'e5c07b' },
+          { token: 'operator', foreground: '56b6c2' },
+          { token: 'delimiter', foreground: 'a6adba' },
+          { token: 'identifier', foreground: 'e4e7ee' }
+        ],
+        colors: {
+          'editor.background': '#1e2027',
+          'editor.foreground': '#d7dae0',
+          'editorLineNumber.foreground': '#4b5263',
+          'editorLineNumber.activeForeground': '#9aa0aa',
+          'editorCursor.foreground': '#61afef',
+          'editor.selectionBackground': '#3e4451',
+          'editor.lineHighlightBackground': '#26282f',
+          'editorIndentGuide.background1': '#2c2f3a',
+          'editorGutter.background': '#1e2027'
+        }
+      });
+
+      const editor = monaco.editor.create(document.getElementById('editor'), {
+        theme: dark ? 'mny-dark' : 'vs',
+        language: 'cpp',
+        value: '',
+        automaticLayout: true,
+        fontSize: 13,
+        minimap: { enabled: false },
+        scrollBeyondLastLine: false,
+        tabSize: 4,
+        fontFamily: 'Cascadia Mono, Consolas, "Microsoft YaHei UI", monospace',
+        padding: { top: 8, bottom: 8 },
+        quickSuggestions: { other: true, comments: false, strings: false },
+        suggestOnTriggerCharacters: true,
+        wordBasedSuggestions: true,
+        acceptSuggestionOnEnter: 'on',
+        tabCompletion: 'on',
+        snippetSuggestions: 'top'
+      });
+
+      /* ---- 轻量 C++ 补全（关键字 / 头文件 / 常用片段） ---- */
+      const KEYWORDS = [
+        'auto', 'bool', 'break', 'case', 'catch', 'char', 'class', 'const', 'constexpr',
+        'continue', 'default', 'delete', 'do', 'double', 'else', 'enum', 'extern',
+        'float', 'for', 'if', 'inline', 'int', 'long', 'namespace', 'new', 'nullptr',
+        'private', 'protected', 'public', 'return', 'short', 'sizeof', 'static',
+        'struct', 'switch', 'template', 'throw', 'true', 'false', 'try', 'typedef',
+        'typename', 'unsigned', 'using', 'virtual', 'void', 'volatile', 'while',
+        'std', 'cout', 'cin', 'cerr', 'endl', 'string', 'vector', 'map', 'set',
+        'size_t', 'printf', 'scanf', 'main'
+      ];
+
+      const HEADERS = [
+        'iostream', 'iomanip', 'fstream', 'sstream', 'string', 'cstring', 'cstdio',
+        'cstdlib', 'cmath', 'algorithm', 'array', 'chrono', 'deque', 'functional',
+        'list', 'map', 'memory', 'numeric', 'queue', 'set', 'stack', 'unordered_map',
+        'unordered_set', 'utility', 'vector', 'cstdint', 'stdint.h', 'stdio.h',
+        'stdlib.h', 'string.h', 'math.h', 'time.h', 'windows.h'
+      ];
+
+      const SNIPPETS = [
+        { label: 'main', detail: 'int main()', text: 'int main() {\n\t$0\n\treturn 0;\n}' },
+        { label: 'for', detail: 'for (...) { }', text: 'for (int ${1:i} = 0; ${1:i} < ${2:count}; ++${1:i}) {\n\t$0\n}' },
+        { label: 'if', detail: 'if (...) { }', text: 'if (${1:condition}) {\n\t$0\n}' },
+        { label: 'while', detail: 'while (...) { }', text: 'while (${1:condition}) {\n\t$0\n}' },
+        { label: 'class', detail: 'class ... { }', text: 'class ${1:Name} {\npublic:\n\t${1:Name}() = default;\n\nprivate:\n\t$0\n};' },
+        { label: 'cout', detail: 'std::cout <<', text: 'std::cout << ${1} << std::endl;' },
+        { label: 'include', detail: '#include <...>', text: '#include <${1:iostream}>' }
+      ];
+
+      monaco.languages.registerCompletionItemProvider('cpp', {
+        triggerCharacters: ['#', '<', '"'],
+        provideCompletionItems: function (model, position) {
+          const linePrefix = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
+
+          const includeMatch = /^[ \t]*#[ \t]*include[ \t]*([<"])([\w./+-]*)$/.exec(linePrefix);
+          if (includeMatch) {
+            const opener = includeMatch[1];
+            const partial = includeMatch[2];
+            const closer = opener === '<' ? '>' : '"';
+            const range = {
+              startLineNumber: position.lineNumber,
+              endLineNumber: position.lineNumber,
+              startColumn: position.column - partial.length,
+              endColumn: position.column
+            };
+            return {
+              suggestions: HEADERS.filter(function (name) {
+                return partial === '' || name.indexOf(partial) !== -1;
+              }).map(function (name) {
+                return {
+                  label: name,
+                  kind: monaco.languages.CompletionItemKind.File,
+                  detail: opener + name + closer,
+                  insertText: name + closer,
+                  range: range
+                };
+              })
+            };
+          }
+
+          const word = model.getWordUntilPosition(position);
+          const range = {
+            startLineNumber: position.lineNumber,
+            endLineNumber: position.lineNumber,
+            startColumn: word.startColumn,
+            endColumn: word.endColumn
+          };
+          const suggestions = [];
+
+          SNIPPETS.forEach(function (snippet) {
+            suggestions.push({
+              label: snippet.label,
+              kind: monaco.languages.CompletionItemKind.Snippet,
+              detail: snippet.detail,
+              insertText: snippet.text,
+              insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+              sortText: '0_' + snippet.label,
+              range: range
+            });
+          });
+
+          KEYWORDS.forEach(function (keyword) {
+            suggestions.push({
+              label: keyword,
+              kind: monaco.languages.CompletionItemKind.Keyword,
+              insertText: keyword,
+              sortText: '1_' + keyword,
+              range: range
+            });
+          });
+
+          return { suggestions: suggestions };
+        }
+      });
+
+      /* ---- 和 XAML 侧通信 ---- */
+      let suppress = false;
+
+      editor.onDidChangeModelContent(function () {
+        if (suppress) { return; }
+        if (host) { host.postMessage({ type: 'templateChanged', text: editor.getValue() }); }
+      });
+
+      editor.onDidChangeCursorPosition(function () {
+        // 让光标一进来就能看到行号列，避免初始布局高度为 0
+        editor.layout();
+      });
+
+      if (host) {
+        host.addEventListener('message', function (e) {
+          const message = e.data;
+          if (!message || message.type !== 'setTemplate') { return; }
+          suppress = true;
+          editor.setValue(String(message.text || ''));
+          editor.setPosition({ lineNumber: 1, column: 1 });
+          suppress = false;
+        });
+      }
+
+      // 在模板编辑器里按 Esc 也能关闭设置页
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && host) {
+          host.postMessage({ type: 'escape' });
+        }
+      });
+
+      if (host) { host.postMessage({ type: 'ready' }); }
+    });
+  </script>
+</body>
+</html>

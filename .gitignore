@@ -1,0 +1,29 @@
+# ============================================================
+#  MnyC++ IDE — Git 忽略规则
+#  注意：路径一律以 "/" 开头做根锚定。
+#  因为 WinUI3Shell/Tools/mingw64/ 下的 bin/ lib/ include/ 是
+#  随 IDE 分发的 MinGW 工具链（csproj 会拷到 Assets\mingw64），
+#  绝不能被无锚定的 bin/ 规则误伤。
+# ============================================================
+
+# ---- 构建产物目录（根锚定，只忽略这几处）----
+/bin/
+/obj/
+/WinUI3Shell/bin/
+/WinUI3Shell/obj/
+/MnyCxx/bin/
+/MnyCxx/obj/
+
+# ---- C++ / VS 中间产物（防止换目录后又被提交进来）----
+*.pdb
+*.pch
+*.idb
+*.ipch
+*.tlog
+*.obj
+*.user
+.vs/
+
+# ---- 运行时输出 ----
+# 运行程序时生成的临时脚本目录（AppContext.BaseDirectory\runs）
+runs/
