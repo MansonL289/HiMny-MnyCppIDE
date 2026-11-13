@@ -32,4 +32,13 @@
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- 发布时补齐 XAML 编译产物：缺了 .xbf / .pri 的包启动即闪退 -->
+  <Target Name="CopyXamlArtifactsToPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <_XamlArtifacts Include="$(OutDir)**\*.xbf" Exclude="$(PublishDir)**\*.xbf" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_XamlArtifacts)" DestinationFolder="$(PublishDir)%(_XamlArtifacts.RecursiveDir)" />
+    <Copy SourceFiles="$(OutDir)$(AssemblyName).pri" DestinationFiles="$(PublishDir)$(AssemblyName).pri" />
+  </Target>
+
 </Project>
