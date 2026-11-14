@@ -12,15 +12,65 @@ require(['vs/editor/editor.main'], function () {
     try { return JSON.parse(localStorage.getItem(settingsKey) || '{}'); } catch (e) { return {}; }
   }
   function writeSettings() {
-    try { localStorage.setItem(settingsKey, JSON.stringify(settings)); } catch (e) { }
+    // 只缓存外观相关的项，模板代码等大文本不写进 localStorage
+    try {
+      localStorage.setItem(settingsKey, JSON.stringify({
+        theme: settings.theme,
+        uiZoom: settings.uiZoom,
+        fontFamily: settings.fontFamily,
+        fontSize: settings.fontSize,
+        fontLigatures: settings.fontLigatures,
+        wordWrap: settings.wordWrap,
+        minimap: settings.minimap,
+        whitespace: settings.whitespace,
+        cursorStyle: settings.cursorStyle,
+        cursorBlinking: settings.cursorBlinking,
+        tabSize: settings.tabSize,
+        insertSpaces: settings.insertSpaces
+      }));
+    } catch (e) { }
   }
 
   const settings = Object.assign(
-    { wordWrap: 'off', minimap: true, fontSize: 13, uiZoom: 1 },
+    {
+      theme: 'system',
+      uiZoom: 1,
+      fontFamily: 'Cascadia Mono, Consolas, "Microsoft YaHei UI", monospace',
+      fontSize: 13,
+      fontLigatures: true,
+      wordWrap: 'off',
+      minimap: true,
+      whitespace: 'selection',
+      cursorStyle: 'line',
+      cursorBlinking: 'blink',
+      tabSize: 4,
+      insertSpaces: true,
+      suggest: true,
+      parameterHints: true,
+      hover: true,
+      bracketColorization: true,
+      stickyScroll: true,
+      occurrencesHighlight: true,
+      autoSave: false,
+      autoSaveSeconds: 60
+    },
     readSettings()
   );
 
   const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+  function isDarkTheme() {
+    if (settings.theme === 'dark') { return true; }
+    if (settings.theme === 'light') { return false; }
+    return darkQuery.matches;
+  }
+
+  function applyTheme() {
+    const dark = isDarkTheme();
+    monaco.editor.setTheme(dark ? 'mny-dark' : 'vs');
+    // 页面外壳（标签栏、终端）跟随同一个主题
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  }
 
   /* 自定义深色主题：One Dark 风格的 C++ 语法配色 */
   monaco.editor.defineTheme('mny-dark', {
@@ -57,19 +107,23 @@ require(['vs/editor/editor.main'], function () {
   });
 
   const editor = monaco.editor.create(document.getElementById('editor'), {
-    theme: darkQuery.matches ? 'mny-dark' : 'vs',
+    theme: isDarkTheme() ? 'mny-dark' : 'vs',
     value: '',
     language: 'plaintext',
     automaticLayout: true,
     fontSize: settings.fontSize,
+    fontFamily: settings.fontFamily,
+    fontLigatures: settings.fontLigatures,
     wordWrap: settings.wordWrap,
     minimap: { enabled: settings.minimap },
+    renderWhitespace: settings.whitespace,
+    cursorStyle: settings.cursorStyle,
+    cursorBlinking: settings.cursorBlinking,
+    tabSize: settings.tabSize,
+    insertSpaces: settings.insertSpaces,
     scrollBeyondLastLine: false,
-    renderWhitespace: 'selection',
-    tabSize: 4,
     // 补全/悬浮等弹层用 fixed 定位，避免被编辑器容器的圆角裁剪裁掉
     fixedOverflowWidgets: true,
-    fontFamily: 'Cascadia Mono, Consolas, "Microsoft YaHei UI", monospace',
     // 补全：输入时自动弹出，并开启当前文档内的单词补全
     quickSuggestions: { other: true, comments: false, strings: false },
     suggestOnTriggerCharacters: true,
@@ -77,12 +131,12 @@ require(['vs/editor/editor.main'], function () {
     acceptSuggestionOnEnter: 'on',
     tabCompletion: 'on',
     snippetSuggestions: 'top',
-    parameterHints: { enabled: true },
+    parameterHints: { enabled: settings.parameterHints },
     suggest: { showKeywords: true, showSnippets: true }
   });
 
-  darkQuery.addEventListener('change', function (e) {
-    monaco.editor.setTheme(e.matches ? 'mny-dark' : 'vs');
+  darkQuery.addEventListener('change', function () {
+    if (settings.theme === 'system') { applyTheme(); }
   });
 
   const LANGUAGE_BY_EXT = {
@@ -264,6 +318,304 @@ require(['vs/editor/editor.main'], function () {
     }
   });
 
+  /* ---------- C++ 语义着色与检查 ----------
+     语法包只给关键字、字符串、数字上色，函数名、std::、cout 这些都只是普通标识符。
+     这里在 tokenize 结果之上再补一层：函数调用着色、std 与类型着色、
+     库符号按是否 #include 了对应头文件决定着色，缺头文件时给一条警告。 */
+
+  // 语法包里没收录的较新关键字
+  const CPP_EXTRA_KEYWORDS = new Set([
+    'alignas', 'asm', 'char8_t', 'char16_t', 'char32_t', 'concept', 'consteval',
+    'constinit', 'co_await', 'co_return', 'co_yield', 'requires', 'static_assert',
+    'noexcept'
+  ]);
+
+  // 头文件 -> 该头文件提供的符号；没 include 就不着色
+  const CPP_LIB_HEADERS = {
+    iostream: ['cout', 'cin', 'cerr', 'clog', 'endl', 'ends', 'flush'],
+    iomanip: ['setw', 'setprecision', 'setfill', 'fixed', 'scientific'],
+    cstdio: ['printf', 'scanf', 'sprintf', 'snprintf', 'sscanf', 'puts', 'getchar',
+      'putchar', 'fopen', 'fclose', 'fprintf', 'fgets', 'fputs', 'fgetc', 'fputc',
+      'fflush', 'perror', 'EOF', 'FILE', 'stdin', 'stdout', 'stderr'],
+    cstdlib: ['malloc', 'calloc', 'realloc', 'free', 'atoi', 'atof', 'atol', 'rand',
+      'srand', 'qsort', 'exit', 'abort', 'system', 'getenv', 'EXIT_SUCCESS',
+      'EXIT_FAILURE', 'RAND_MAX'],
+    cstring: ['strlen', 'strcpy', 'strncpy', 'strcmp', 'strncmp', 'strcat', 'strstr',
+      'strchr', 'memset', 'memcpy', 'memmove', 'memcmp'],
+    cmath: ['sqrt', 'pow', 'exp', 'log', 'log10', 'sin', 'cos', 'tan', 'asin', 'acos',
+      'atan', 'atan2', 'fabs', 'floor', 'ceil', 'round', 'fmod', 'M_PI', 'INFINITY'],
+    ctime: ['time', 'clock', 'difftime', 'localtime', 'gmtime', 'strftime', 'mktime',
+      'time_t', 'CLOCKS_PER_SEC'],
+    cassert: ['assert'],
+    cstdint: ['int8_t', 'int16_t', 'int32_t', 'int64_t', 'uint8_t', 'uint16_t',
+      'uint32_t', 'uint64_t', 'intptr_t', 'uintptr_t'],
+    cstddef: ['size_t', 'ptrdiff_t'],
+    string: ['string', 'string_view', 'to_string', 'stoi', 'stol', 'stod', 'stof', 'getline'],
+    vector: ['vector'], array: ['array'], list: ['list'], deque: ['deque'],
+    stack: ['stack'], queue: ['queue', 'priority_queue'],
+    map: ['map', 'multimap', 'unordered_map'], set: ['set', 'multiset', 'unordered_set'],
+    utility: ['pair', 'make_pair', 'move', 'forward'],
+    memory: ['unique_ptr', 'shared_ptr', 'weak_ptr', 'make_unique', 'make_shared'],
+    fstream: ['ifstream', 'ofstream', 'fstream'],
+    sstream: ['stringstream', 'istringstream', 'ostringstream'],
+    thread: ['thread', 'mutex', 'lock_guard'],
+    bitset: ['bitset'], optional: ['optional'], variant: ['variant'], tuple: ['tuple'],
+    stdexcept: ['runtime_error', 'logic_error', 'out_of_range', 'invalid_argument']
+  };
+
+  // 等价头文件：<stdio.h> 与 <cstdio> 视为同一个
+  const CPP_HEADER_ALIASES = {
+    cstdio: ['stdio.h'], cstdlib: ['stdlib.h'], cstring: ['string.h'], cmath: ['math.h'],
+    ctime: ['time.h'], cstdint: ['stdint.h'], cstddef: ['stddef.h'], cassert: ['assert.h']
+  };
+
+  const CPP_TYPE_SYMBOLS = new Set([
+    'FILE', 'size_t', 'ptrdiff_t', 'time_t',
+    'int8_t', 'int16_t', 'int32_t', 'int64_t', 'uint8_t', 'uint16_t', 'uint32_t',
+    'uint64_t', 'intptr_t', 'uintptr_t',
+    'string', 'string_view', 'vector', 'array', 'list', 'deque', 'stack', 'queue',
+    'priority_queue', 'map', 'multimap', 'unordered_map', 'set', 'multiset',
+    'unordered_set', 'pair', 'unique_ptr', 'shared_ptr', 'weak_ptr', 'ifstream',
+    'ofstream', 'fstream', 'stringstream', 'istringstream', 'ostringstream', 'thread',
+    'mutex', 'lock_guard', 'bitset', 'optional', 'variant', 'tuple', 'runtime_error',
+    'logic_error', 'out_of_range', 'invalid_argument'
+  ]);
+
+  // 缺头文件时值得提醒的符号（用户几乎不会自己定义同名函数）
+  const CPP_CHECK_SYMBOLS = new Set([
+    'printf', 'scanf', 'sprintf', 'snprintf', 'puts', 'fopen', 'fclose', 'fputs',
+    'fgets', 'fprintf', 'perror', 'malloc', 'calloc', 'realloc', 'free', 'atoi',
+    'atof', 'qsort', 'strlen', 'strcpy', 'strncpy', 'strcmp', 'strcat', 'memset',
+    'memcpy', 'sqrt', 'pow', 'fabs', 'cout', 'cin', 'cerr', 'clog', 'endl'
+  ]);
+
+  // 可以出现在函数名之前的类型关键字
+  const CPP_DECL_TYPE_KEYWORDS = new Set([
+    'void', 'int', 'char', 'bool', 'float', 'double', 'long', 'short', 'unsigned',
+    'signed', 'auto', 'const', 'static', 'inline', 'virtual', 'explicit', 'extern',
+    'template', 'typename', 'class', 'struct', 'enum', 'union', 'friend', 'constexpr',
+    'volatile', 'register', 'wchar_t', 'mutable'
+  ]);
+
+  const CPP_SYMBOL_INFO = new Map();
+  Object.keys(CPP_LIB_HEADERS).forEach(function (header) {
+    CPP_LIB_HEADERS[header].forEach(function (symbol) {
+      let info = CPP_SYMBOL_INFO.get(symbol);
+      if (!info) {
+        info = { headers: [], type: CPP_TYPE_SYMBOLS.has(symbol) };
+        CPP_SYMBOL_INFO.set(symbol, info);
+      }
+      // 同一个符号可能由多个头文件提供（比如 getline），任意一个 included 即可
+      if (info.headers.indexOf(header) === -1) { info.headers.push(header); }
+    });
+  });
+
+  function libHeaderIncluded(headers, info) {
+    for (let i = 0; i < info.headers.length; i += 1) {
+      if (headerIncluded(headers, info.headers[i])) { return true; }
+    }
+    return false;
+  }
+
+  function headerIncluded(headers, header) {
+    if (headers.has('*') || headers.has(header)) { return true; }
+    const aliases = CPP_HEADER_ALIASES[header];
+    if (!aliases) { return false; }
+    for (let i = 0; i < aliases.length; i += 1) {
+      if (headers.has(aliases[i])) { return true; }
+    }
+    return false;
+  }
+
+  function tokenOffset(token) {
+    // Monaco 0.52 用 offset，旧版本用 startIndex
+    return typeof token.offset === 'number' ? token.offset : token.startIndex;
+  }
+
+  function previousMeaningfulToken(flat, index) {
+    for (let i = index - 1; i >= 0; i -= 1) {
+      if (flat[i].word.trim()) { return flat[i]; }
+    }
+    return null;
+  }
+
+  function nextMeaningfulToken(flat, index) {
+    for (let i = index + 1; i < flat.length; i += 1) {
+      if (flat[i].word.trim()) { return flat[i]; }
+    }
+    return null;
+  }
+
+  // 前一个 token 是不是「类型」的位置，用来判断 name( 是声明还是调用
+  function isTypeLikeToken(prev) {
+    if (!prev) { return false; }
+    if (prev.type.indexOf('keyword') === 0) { return CPP_DECL_TYPE_KEYWORDS.has(prev.word); }
+    if (prev.type.indexOf('identifier') === 0) { return true; }
+    return prev.word === '*' || prev.word === '&' || prev.word === '&&' ||
+      prev.word === '>' || prev.word === '>>';
+  }
+
+  // 成员调用 obj.foo( / obj->foo( / 限定名 Foo::bar(
+  function isMemberAccess(prev) {
+    return !!prev && (prev.word === '.' || prev.word === '->' || prev.word === '::');
+  }
+
+  const MAX_SEM_CHARS = 1200000;
+  const semDecorations = editor.createDecorationsCollection();
+  let semTimer = 0;
+  let semRetry = 0;
+  let lastSemModel = null;
+
+  function scheduleCppSemantics(delay) {
+    if (semTimer) { clearTimeout(semTimer); }
+    semTimer = setTimeout(function () {
+      semTimer = 0;
+      applyCppSemantics();
+    }, typeof delay === 'number' ? delay : 260);
+  }
+
+  function collectIncludedHeaders(model) {
+    const headers = new Set();
+    const count = model.getLineCount();
+    for (let line = 1; line <= count; line += 1) {
+      const text = model.getLineContent(line);
+      if (text.indexOf('#') === -1) { continue; }
+      const match = /^[ \t]*#[ \t]*include[ \t]*[<"]([^>"]+)[>"]/.exec(text);
+      if (!match) { continue; }
+      const full = match[1].trim();
+      // bits/stdc++.h 这类万能头文件把标准库全带进来了，视为全部已包含
+      if (full === 'bits/stdc++.h' || full.indexOf('bits/') === 0) { headers.add('*'); }
+      // 带子目录的头文件（sys/types.h）只按文件名判断
+      headers.add(full.substring(full.lastIndexOf('/') + 1));
+    }
+    return headers;
+  }
+
+  function applyCppSemantics() {
+    const model = editor.getModel();
+    const tab = activeTab();
+
+    if (lastSemModel && lastSemModel !== model && !lastSemModel.isDisposed()) {
+      monaco.editor.setModelMarkers(lastSemModel, 'mny-cpp', []);
+    }
+    lastSemModel = null;
+    semDecorations.clear();
+
+    if (!model || !tab || tab.largeFile || model.getLanguageId() !== 'cpp') { return; }
+    if (model.getValueLength() > MAX_SEM_CHARS) { return; }
+
+    const tokenized = monaco.editor.tokenize(model.getValue(), 'cpp');
+    if (!tokenized || tokenized.length === 0) { return; }
+
+    // 语言包可能还没加载完，此时拿不到有效 token；稍后重试几次
+    let hasTokens = false;
+    for (let i = 0; i < tokenized.length && !hasTokens; i += 1) {
+      const tokens = tokenized[i] || [];
+      for (let k = 0; k < tokens.length; k += 1) {
+        if (tokens[k].type) { hasTokens = true; break; }
+      }
+    }
+    if (!hasTokens && model.getValueLength() > 0 && semRetry < 3) {
+      semRetry += 1;
+      scheduleCppSemantics(200);
+      return;
+    }
+    semRetry = 0;
+
+    // 展平成 token 列表，便于判断前后文
+    const flat = [];
+    for (let i = 0; i < tokenized.length; i += 1) {
+      const tokens = tokenized[i] || [];
+      if (tokens.length === 0) { continue; }
+      const lineText = model.getLineContent(i + 1);
+      for (let k = 0; k < tokens.length; k += 1) {
+        const start = tokenOffset(tokens[k]);
+        if (typeof start !== 'number') { continue; }
+        const rawEnd = k + 1 < tokens.length ? tokenOffset(tokens[k + 1]) : lineText.length;
+        const end = typeof rawEnd === 'number' ? rawEnd : lineText.length;
+        const word = lineText.slice(start, end);
+        if (!word.trim()) { continue; }
+        flat.push({
+          line: i + 1, start: start, end: end, word: word,
+          type: tokens[k].type || ''
+        });
+      }
+    }
+
+    // 第一遍：只认「本文件里真实存在」的符号，避免把拼错的名字也当成函数着色
+    const userTypes = new Set();
+    const declaredFunctions = new Set();
+    for (let i = 0; i < flat.length; i += 1) {
+      const token = flat[i];
+      if (token.type.indexOf('identifier') !== 0) { continue; }
+      const prev = previousMeaningfulToken(flat, i);
+      if (prev && /^keyword\.(class|struct|enum|union|using)\b/.test(prev.type)) {
+        userTypes.add(token.word);
+        continue;
+      }
+      // 形如「类型 名字(」：函数声明或定义
+      const next = nextMeaningfulToken(flat, i);
+      if (next && next.word === '(' && isTypeLikeToken(prev)) {
+        declaredFunctions.add(token.word);
+      }
+    }
+
+    const headers = collectIncludedHeaders(model);
+    const decorations = [];
+    const markers = [];
+
+    for (let i = 0; i < flat.length; i += 1) {
+      const token = flat[i];
+      // 只处理普通标识符（跳过字符串里的内容、注释、预处理指令等）
+      if (token.type.indexOf('identifier') !== 0) { continue; }
+      const word = token.word;
+
+      let className = '';
+      const lib = CPP_SYMBOL_INFO.get(word);
+      const next = nextMeaningfulToken(flat, i);
+      const prev = previousMeaningfulToken(flat, i);
+
+      if (CPP_EXTRA_KEYWORDS.has(word)) {
+        className = 'mny-sem-keyword';
+      } else if (word === 'std') {
+        className = 'mny-sem-type';
+      } else if (lib) {
+        // 库符号必须 include 了对应头文件才着色
+        if (libHeaderIncluded(headers, lib)) {
+          className = lib.type ? 'mny-sem-type' : 'mny-sem-function';
+        } else if (CPP_CHECK_SYMBOLS.has(word) && markers.length < 100) {
+          markers.push({
+            severity: monaco.MarkerSeverity.Warning,
+            message: word + ' 定义在 <' + lib.headers[0] + '> 中，当前文件没有包含这个头文件',
+            startLineNumber: token.line, startColumn: token.start + 1,
+            endLineNumber: token.line, endColumn: token.end + 1
+          });
+        }
+      } else if (userTypes.has(word)) {
+        className = 'mny-sem-type';
+      } else if (next && next.word === '(') {
+        // 只有本文件声明过的函数、成员调用、限定名调用才着色
+        if (declaredFunctions.has(word) || isMemberAccess(prev)) {
+          className = 'mny-sem-function';
+        }
+      }
+
+      if (!className) { continue; }
+      decorations.push({
+        range: new monaco.Range(token.line, token.start + 1, token.line, token.end + 1),
+        options: { inlineClassName: className }
+      });
+    }
+
+    semDecorations.set(decorations);
+    monaco.editor.setModelMarkers(model, 'mny-cpp', markers);
+    lastSemModel = model;
+  }
+
+  editor.onDidChangeModelContent(function () {
+    scheduleCppSemantics();
+  });
+
   function post(message) {
     if (host) { host.postMessage(message); }
   }
@@ -320,15 +672,58 @@ require(['vs/editor/editor.main'], function () {
     }
   }
 
+  /* ---------- 编辑器选项（由宿主设置驱动） ---------- */
+
+  function baseEditorOptions() {
+    return {
+      fontSize: settings.fontSize,
+      fontFamily: settings.fontFamily,
+      fontLigatures: settings.fontLigatures,
+      wordWrap: settings.wordWrap,
+      minimap: { enabled: settings.minimap },
+      renderWhitespace: settings.whitespace,
+      cursorStyle: settings.cursorStyle,
+      cursorBlinking: settings.cursorBlinking,
+      tabSize: settings.tabSize,
+      insertSpaces: settings.insertSpaces,
+      folding: true,
+      largeFileOptimizations: true,
+      quickSuggestions: settings.suggest
+        ? { other: true, comments: false, strings: false }
+        : false,
+      suggestOnTriggerCharacters: settings.suggest,
+      wordBasedSuggestions: settings.suggest ? true : 'off',
+      parameterHints: { enabled: settings.parameterHints },
+      hover: { enabled: settings.hover },
+      suggest: { showKeywords: settings.suggest, showSnippets: settings.suggest },
+      occurrencesHighlight: settings.occurrencesHighlight ? 'singleFile' : 'off',
+      selectionHighlight: true,
+      matchBrackets: 'always',
+      bracketPairColorization: { enabled: settings.bracketColorization },
+      guides: { bracketPairs: false, indentation: true },
+      codeLens: true,
+      colorDecorators: true,
+      links: true,
+      stickyScroll: { enabled: settings.stickyScroll },
+      renderValidationDecorations: 'editable'
+    };
+  }
+
   function applyFileMode(tab) {
     const large = !!(tab && tab.largeFile);
     largeFileNoticeEl.classList.toggle('visible', large);
 
-    editor.updateOptions(large ? {
+    const base = baseEditorOptions();
+    if (!large) {
+      editor.updateOptions(base);
+      return;
+    }
+
+    // 大文件模式：关掉补全、悬浮、括号着色等重型特性
+    editor.updateOptions(Object.assign({}, base, {
       wordWrap: 'off',
       minimap: { enabled: false },
       folding: false,
-      largeFileOptimizations: true,
       quickSuggestions: false,
       suggestOnTriggerCharacters: false,
       wordBasedSuggestions: 'off',
@@ -346,28 +741,24 @@ require(['vs/editor/editor.main'], function () {
       renderWhitespace: 'none',
       renderValidationDecorations: 'off',
       suggest: { showKeywords: false, showSnippets: false }
-    } : {
+    }));
+  }
+
+  /* 把宿主持有的设置套用到编辑器（设置页改完立即生效） */
+  function applyEditorOptions() {
+    applyTheme();
+    applyUiZoom(settings.uiZoom);
+    applyFileMode(activeTab());
+  }
+
+  /* 编辑器内的交互改了设置，回传给宿主，宿主再存盘并同步设置页 */
+  function reportState() {
+    post({
+      type: 'editorStateChanged',
       wordWrap: settings.wordWrap,
-      minimap: { enabled: settings.minimap },
-      folding: true,
-      largeFileOptimizations: true,
-      quickSuggestions: { other: true, comments: false, strings: false },
-      suggestOnTriggerCharacters: true,
-      wordBasedSuggestions: true,
-      parameterHints: { enabled: true },
-      hover: { enabled: true },
-      occurrencesHighlight: 'singleFile',
-      selectionHighlight: true,
-      matchBrackets: 'always',
-      bracketPairColorization: { enabled: true },
-      guides: { bracketPairs: true, indentation: true },
-      codeLens: true,
-      colorDecorators: true,
-      links: true,
-      stickyScroll: { enabled: true },
-      renderWhitespace: 'selection',
-      renderValidationDecorations: 'editable',
-      suggest: { showKeywords: true, showSnippets: true }
+      minimap: settings.minimap,
+      fontSize: settings.fontSize,
+      uiZoom: settings.uiZoom
     });
   }
 
@@ -383,6 +774,8 @@ require(['vs/editor/editor.main'], function () {
     activeId = id;
     const tab = activeTab();
     applyFileMode(tab);
+    // 切换标签后重新做一遍语义着色（语法包可能刚加载，所以留一点延迟）
+    scheduleCppSemantics(120);
 
     if (!tab || tab.model.isDisposed()) {
       editor.setModel(null);
@@ -679,6 +1072,7 @@ require(['vs/editor/editor.main'], function () {
     settings.wordWrap = settings.wordWrap === 'off' ? 'on' : 'off';
     editor.updateOptions({ wordWrap: settings.wordWrap });
     writeSettings();
+    reportState();
   }
 
   function toggleMinimap() {
@@ -687,6 +1081,7 @@ require(['vs/editor/editor.main'], function () {
     settings.minimap = !settings.minimap;
     editor.updateOptions({ minimap: { enabled: settings.minimap } });
     writeSettings();
+    reportState();
   }
 
   function changeFontSize(delta) {
@@ -694,6 +1089,7 @@ require(['vs/editor/editor.main'], function () {
     settings.fontSize = size;
     editor.updateOptions({ fontSize: size });
     writeSettings();
+    reportState();
   }
 
   /* Ctrl + '+' / '-'：缩放整个编辑器界面（标签栏、终端、编辑器一起放大缩小） */
@@ -709,6 +1105,7 @@ require(['vs/editor/editor.main'], function () {
     settings.uiZoom = zoom;
     applyUiZoom(zoom);
     writeSettings();
+    reportState();
   }
 
   function handleCommand(name) {
@@ -951,9 +1348,68 @@ require(['vs/editor/editor.main'], function () {
         }
         case 'terminalNote': terminalNote(msg.text); break;
         case 'terminalStdout': terminalStdout(msg.text); break;
-        case 'settings': newFileTemplate = msg.template || ''; break;
+        case 'settings': applyHostSettings(msg); break;
       }
     });
+  }
+
+  /* ---------- 宿主下发的设置 ---------- */
+
+  function applyHostSettings(msg) {
+    if (typeof msg.theme === 'string') { settings.theme = msg.theme; }
+    if (typeof msg.fontFamily === 'string' && msg.fontFamily.length > 0) { settings.fontFamily = msg.fontFamily; }
+    if (typeof msg.fontSize === 'number') { settings.fontSize = msg.fontSize; }
+    if (typeof msg.fontLigatures === 'boolean') { settings.fontLigatures = msg.fontLigatures; }
+    if (typeof msg.wordWrap === 'string') { settings.wordWrap = msg.wordWrap; }
+    if (typeof msg.minimap === 'boolean') { settings.minimap = msg.minimap; }
+    if (typeof msg.whitespace === 'string') { settings.whitespace = msg.whitespace; }
+    if (typeof msg.cursorStyle === 'string') { settings.cursorStyle = msg.cursorStyle; }
+    if (typeof msg.cursorBlinking === 'string') { settings.cursorBlinking = msg.cursorBlinking; }
+    if (typeof msg.tabSize === 'number') { settings.tabSize = msg.tabSize; }
+    if (typeof msg.insertSpaces === 'boolean') { settings.insertSpaces = msg.insertSpaces; }
+    if (typeof msg.suggest === 'boolean') { settings.suggest = msg.suggest; }
+    if (typeof msg.parameterHints === 'boolean') { settings.parameterHints = msg.parameterHints; }
+    if (typeof msg.hover === 'boolean') { settings.hover = msg.hover; }
+    if (typeof msg.bracketColorization === 'boolean') { settings.bracketColorization = msg.bracketColorization; }
+    if (typeof msg.stickyScroll === 'boolean') { settings.stickyScroll = msg.stickyScroll; }
+    if (typeof msg.occurrencesHighlight === 'boolean') { settings.occurrencesHighlight = msg.occurrencesHighlight; }
+    if (typeof msg.uiZoom === 'number') { settings.uiZoom = msg.uiZoom; }
+    if (typeof msg.autoSave === 'boolean') { settings.autoSave = msg.autoSave; }
+    if (typeof msg.autoSaveSeconds === 'number') { settings.autoSaveSeconds = msg.autoSaveSeconds; }
+
+    // 新建文件模板
+    newFileTemplate = msg.insertTemplate === false ? '' : (msg.template || '');
+
+    writeSettings();
+    applyEditorOptions();
+    setupAutoSave();
+  }
+
+  /* ---------- 自动保存 ---------- */
+
+  let autoSaveTimer = null;
+
+  function setupAutoSave() {
+    if (autoSaveTimer) {
+      clearInterval(autoSaveTimer);
+      autoSaveTimer = null;
+    }
+    if (!settings.autoSave) { return; }
+
+    const seconds = Math.min(600, Math.max(5, settings.autoSaveSeconds || 60));
+    autoSaveTimer = setInterval(function () {
+      for (const tab of tabs) {
+        // 未保存过的文件没有路径，等用户保存后再自动保存
+        if (tab.dirty && tab.path && tab.model && !tab.model.isDisposed()) {
+          post({
+            type: 'autoSave',
+            path: tab.path,
+            name: tab.name,
+            content: tab.model.getValue()
+          });
+        }
+      }
+    }, seconds * 1000);
   }
 
   /* 编辑器内的快捷键：Ctrl+N 新建、Ctrl+S 保存、Ctrl+Shift+S 另存为、Ctrl+W 关闭
@@ -1017,5 +1473,6 @@ require(['vs/editor/editor.main'], function () {
   }, { passive: false, capture: true });
 
   post({ type: 'ready' });
+  applyTheme();
   applyUiZoom(settings.uiZoom);
 });

@@ -27,9 +27,6 @@ public sealed partial class MainWindow : Window
 {
     private const string EditorHostName = "mny.local";
 
-    /// <summary>超过该字节数的文件使用大文件模式，不再设置打开大小上限。</summary>
-    private const long LargeFileModeBytes = 30L * 1024 * 1024;
-
     /// <summary>分块发送到编辑器的每块字符数，避开 WebView2 单条消息的大小上限。</summary>
     private const int ChunkChars = 256 * 1024;
 
@@ -91,6 +88,9 @@ public sealed partial class MainWindow : Window
         // 设置面板：关闭时隐藏，任何改动立即保存并同步给编辑器页面
         SettingsViewControl.CloseRequested += HideSettings;
         SettingsViewControl.SettingsChanged += OnSettingsChanged;
+
+        // 启动时套用保存下来的应用主题
+        ApplyAppTheme();
 
         // 窗口关闭时清理所有终端进程
         Closed += (_, _) => KillAllTerminals();
@@ -322,6 +322,12 @@ public sealed partial class MainWindow : Window
             case "hostMessage":
                 ShowHostMessage(message["text"]?.GetValue<string>() ?? string.Empty);
                 break;
+            case "editorStateChanged":
+                ApplyEditorState(message);
+                break;
+            case "autoSave":
+                _ = HandleAutoSaveAsync(message);
+                break;
         }
     }
 
@@ -390,7 +396,7 @@ public sealed partial class MainWindow : Window
 
         try
         {
-            File.WriteAllText(path, content, new UTF8Encoding(false));
+            File.WriteAllText(path, content, GetSaveEncoding());
             SendToEditor(new { type = "saved", path, name });
         }
         catch (Exception ex)
@@ -523,7 +529,7 @@ public sealed partial class MainWindow : Window
         try
         {
             var info = new FileInfo(path);
-            await SendFileToEditorAsync(path, info.Name, info.Length > LargeFileModeBytes);
+            await SendFileToEditorAsync(path, info.Name, info.Length > _settings.LargeFileModeBytes);
         }
         catch (Exception ex)
         {
@@ -1003,18 +1009,127 @@ public sealed partial class MainWindow : Window
     private void OnSettingsChanged()
     {
         _settings.Save();
+        ApplyAppTheme();
         SendSettingsToEditor();
+        SettingsViewControl.ApplyAppearance(_settings);
     }
 
-    /// <summary>把新文件模板同步给编辑器页面。</summary>
+    /// <summary>按设置切换应用主题（跟随系统时交给系统决定）。</summary>
+    private void ApplyAppTheme()
+    {
+        ElementTheme theme = _settings.AppTheme switch
+        {
+            "light" => ElementTheme.Light,
+            "dark" => ElementTheme.Dark,
+            _ => ElementTheme.Default,
+        };
+        ApplyTheme(theme);
+    }
+
+    /// <summary>把设置同步给编辑器页面（外观、行为、新文件模板）。</summary>
     private void SendSettingsToEditor()
     {
         SendToEditor(new
         {
             type = "settings",
             template = _settings.TemplateCode,
+            insertTemplate = _settings.InsertTemplateOnNewFile,
+            theme = _settings.EditorTheme,
+            uiZoom = _settings.UiZoom,
+            fontFamily = _settings.EditorFontFamily,
+            fontSize = _settings.EditorFontSize,
+            fontLigatures = _settings.EditorFontLigatures,
+            wordWrap = _settings.EditorWordWrap,
+            minimap = _settings.EditorMinimap,
+            whitespace = _settings.EditorWhitespace,
+            cursorStyle = _settings.EditorCursorStyle,
+            cursorBlinking = _settings.EditorCursorBlinking,
+            tabSize = _settings.EditorTabSize,
+            insertSpaces = _settings.EditorInsertSpaces,
+            suggest = _settings.EditorSuggest,
+            parameterHints = _settings.EditorParameterHints,
+            hover = _settings.EditorHover,
+            bracketColorization = _settings.EditorBracketColorization,
+            stickyScroll = _settings.EditorStickyScroll,
+            occurrencesHighlight = _settings.EditorOccurrencesHighlight,
+            autoSave = _settings.AutoSave,
+            autoSaveSeconds = _settings.AutoSaveSeconds,
         });
     }
+
+    /// <summary>编辑器里的交互（换行、字号、缩放）改动了设置，同步回来并持久化。</summary>
+    private void ApplyEditorState(JsonNode message)
+    {
+        bool changed = false;
+
+        string? wordWrap = message["wordWrap"]?.GetValue<string>();
+        if (wordWrap is not null && wordWrap != _settings.EditorWordWrap)
+        {
+            _settings.EditorWordWrap = wordWrap;
+            changed = true;
+        }
+
+        bool? minimap = message["minimap"]?.GetValue<bool>();
+        if (minimap is not null && minimap != _settings.EditorMinimap)
+        {
+            _settings.EditorMinimap = minimap.Value;
+            changed = true;
+        }
+
+        int? fontSize = message["fontSize"]?.GetValue<int>();
+        if (fontSize is not null && fontSize != _settings.EditorFontSize)
+        {
+            _settings.EditorFontSize = Math.Clamp(fontSize.Value, 8, 40);
+            changed = true;
+        }
+
+        double? uiZoom = message["uiZoom"]?.GetValue<double>();
+        if (uiZoom is not null && Math.Abs(uiZoom.Value - _settings.UiZoom) > 0.001)
+        {
+            _settings.UiZoom = Math.Clamp(uiZoom.Value, 0.5, 2.0);
+            changed = true;
+        }
+
+        if (!changed)
+        {
+            return;
+        }
+
+        _settings.Save();
+        if (_settingsOpen)
+        {
+            SettingsViewControl.Refresh(_settings);
+        }
+    }
+
+    /// <summary>自动保存：直接写盘，不弹对话框。</summary>
+    private async Task HandleAutoSaveAsync(JsonNode message)
+    {
+        string? path = message["path"]?.GetValue<string>();
+        if (string.IsNullOrEmpty(path))
+        {
+            return;
+        }
+
+        string content = message["content"]?.GetValue<string>() ?? string.Empty;
+        try
+        {
+            await File.WriteAllTextAsync(path, content, GetSaveEncoding());
+            SendToEditor(new { type = "saved", path, name = Path.GetFileName(path) });
+        }
+        catch (Exception ex)
+        {
+            await ShowMessageAsync("自动保存失败", ex.Message);
+        }
+    }
+
+    /// <summary>按设置选择保存时使用的编码。</summary>
+    private Encoding GetSaveEncoding() => _settings.SaveEncoding switch
+    {
+        "utf8bom" => new UTF8Encoding(true),
+        "gbk" => Encoding.GetEncoding(936),
+        _ => new UTF8Encoding(false),
+    };
 
     /// <summary>终端面板在编辑器 WebView 里，编辑器没就绪或被欢迎页/设置页挡住时按钮置灰。</summary>
     private void UpdateTerminalButtonState()
@@ -1067,6 +1182,18 @@ public sealed partial class MainWindow : Window
 
         args.Handled = true;
         _ = RunCommandAsync(command);
+    }
+
+    /// <summary>设置页打开时用 Esc 关闭设置（焦点落在下拉框等控件上时的兜底）。</summary>
+    private void Escape_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        if (!_settingsOpen)
+        {
+            return;
+        }
+
+        args.Handled = true;
+        HideSettings();
     }
 
     /// <summary>Win11 强制窗口圆角；Win10 不支持该属性，调用失败也不影响使用。</summary>
@@ -1191,9 +1318,9 @@ public sealed partial class MainWindow : Window
         }
 
         // 基础参数保持 -static，保证编译出的 exe 脱离 Assets\mingw64 也能直接运行；
-        // 用户在设置里勾选的命令追加在后面，可覆盖默认（如 -std=c++11）
+        // 语言标准与警告等级来自设置页，用户自己填的命令追加在最后，可以覆盖默认（如 -std=c++11）
         string extraArguments = _settings.BuildExtraArguments();
-        string arguments = $"-std=c++17 -g -static{(extraArguments.Length > 0 ? " " + extraArguments : string.Empty)} {Quote(sourcePath)} -o {Quote(exePath)}";
+        string arguments = $"-g -static{(extraArguments.Length > 0 ? " " + extraArguments : string.Empty)} {Quote(sourcePath)} -o {Quote(exePath)}";
         string banner = kind == "compile" ? $"[编译] {fileName}" : $"[编译并运行] {fileName}";
 
         _building = true;
@@ -1254,8 +1381,8 @@ public sealed partial class MainWindow : Window
         DispatcherQueue.TryEnqueue(() => SendToEditor(new { type = "terminalStdout", text }));
     }
 
-    /// <summary>生成一个带退出码、时间与 pause 的运行脚本，并写入临时目录。</summary>
-    private static string WriteRunScript(string exePath)
+    /// <summary>生成一个带退出码、时间的运行脚本，并写入临时目录。</summary>
+    private string WriteRunScript(string exePath)
     {
         string directory = Path.Combine(Path.GetTempPath(), "mnycpp-run");
         Directory.CreateDirectory(directory);
@@ -1279,9 +1406,8 @@ public sealed partial class MainWindow : Window
             "set /a CS=%ELAPSED% %% 100\r\n" +
             "if %CS% lss 10 set CS=0%CS%\r\n" +
             "echo.\r\n" +
-            "echo ----------------------------------------------\r\n" +
             "echo 程序运行完毕，退出码  %EXITCODE% ，运行时间  %SECS%.%CS%s\r\n" +
-            "pause\r\n";
+            (_settings.PauseOnExit ? "pause\r\n" : string.Empty);
 
         File.WriteAllText(script, content, Encoding.GetEncoding(936));
         return script;
@@ -1344,7 +1470,9 @@ public sealed partial class MainWindow : Window
 
         // cmd 内部命令按系统 OEM 代码页输出（中文系统是 GBK/936）
         Encoding oemEncoding = Encoding.GetEncoding(CultureInfo.CurrentCulture.TextInfo.OEMCodePage);
-        string workingDirectory = _rootFolderPath ?? AppContext.BaseDirectory;
+        string workingDirectory = _settings.TerminalDirectory == "app"
+            ? AppContext.BaseDirectory
+            : (_rootFolderPath ?? AppContext.BaseDirectory);
 
         var startInfo = new ProcessStartInfo
         {

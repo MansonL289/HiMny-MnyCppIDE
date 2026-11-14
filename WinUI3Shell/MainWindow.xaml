@@ -17,6 +17,8 @@
             <KeyboardAccelerator Key="S" Modifiers="Control" Invoked="Shortcut_Invoked" />
             <KeyboardAccelerator Key="S" Modifiers="Control,Shift" Invoked="Shortcut_Invoked" />
             <KeyboardAccelerator Key="W" Modifiers="Control" Invoked="Shortcut_Invoked" />
+            <!-- 设置页打开时，Esc 作为关闭兜底（焦点落在下拉框等控件上时也能生效） -->
+            <KeyboardAccelerator Key="Escape" Invoked="Escape_Invoked" />
         </Grid.KeyboardAccelerators>
         <Grid.RowDefinitions>
             <RowDefinition Height="48" />

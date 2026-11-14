@@ -3,12 +3,19 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>
+  // 先按系统主题上色，避免脚本加载前出现白闪
+  document.documentElement.dataset.theme =
+    window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+</script>
 <style>
+  :root {
+    --editor-bg: #ffffff;
+  }
+  html[data-theme="dark"] { --editor-bg: #1e2027; }
   html, body { margin: 0; height: 100%; overflow: hidden; }
-  body { background: #1e2027; }
-  @media (prefers-color-scheme: light) { body { background: #ffffff; } }
-  #editor { position: absolute; inset: 0; }
-</style>
+  body { background: var(--editor-bg); }
+  #editor { position: absolute; inset: 0; }</style>
 </head>
 <body>
   <div id="editor"></div>
@@ -20,7 +27,24 @@
       'use strict';
 
       const host = (window.chrome && window.chrome.webview) ? window.chrome.webview : null;
-      const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      let theme = 'system';
+
+      function isDarkTheme() {
+        if (theme === 'dark') { return true; }
+        if (theme === 'light') { return false; }
+        return darkQuery.matches;
+      }
+
+      function applyTheme() {
+        const dark = isDarkTheme();
+        monaco.editor.setTheme(dark ? 'mny-dark' : 'vs');
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      }
+
+      darkQuery.addEventListener('change', function () {
+        if (theme === 'system') { applyTheme(); }
+      });
 
       /* 与主编辑器保持一致的配色（One Dark 风格） */
       monaco.editor.defineTheme('mny-dark', {
@@ -56,7 +80,7 @@
       });
 
       const editor = monaco.editor.create(document.getElementById('editor'), {
-        theme: dark ? 'mny-dark' : 'vs',
+        theme: isDarkTheme() ? 'mny-dark' : 'vs',
         language: 'cpp',
         value: '',
         automaticLayout: true,
@@ -186,11 +210,33 @@
       if (host) {
         host.addEventListener('message', function (e) {
           const message = e.data;
-          if (!message || message.type !== 'setTemplate') { return; }
-          suppress = true;
-          editor.setValue(String(message.text || ''));
-          editor.setPosition({ lineNumber: 1, column: 1 });
-          suppress = false;
+          if (!message || typeof message.type !== 'string') { return; }
+
+          if (message.type === 'setTemplate') {
+            suppress = true;
+            editor.setValue(String(message.text || ''));
+            editor.setPosition({ lineNumber: 1, column: 1 });
+            suppress = false;
+            return;
+          }
+
+          // 未勾选「在新文件中插入以下代码」时，模板只读
+          if (message.type === 'setEditable') {
+            editor.updateOptions({ readOnly: !message.editable });
+            return;
+          }
+
+          // 外观跟随设置页里的编辑器设置，预览与主编辑器保持一致
+          if (message.type === 'appearance') {
+            if (typeof message.theme === 'string') { theme = message.theme; }
+            if (typeof message.fontFamily === 'string' && message.fontFamily.length > 0) {
+              editor.updateOptions({ fontFamily: message.fontFamily });
+            }
+            if (typeof message.fontSize === 'number') {
+              editor.updateOptions({ fontSize: message.fontSize });
+            }
+            applyTheme();
+          }
         });
       }
 
