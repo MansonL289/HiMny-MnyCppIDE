@@ -126,6 +126,8 @@
                 <MenuFlyoutItem Text="另存为…" Tag="cmd:saveAs" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+Shift+S" />
                 <MenuFlyoutItem Text="关闭文件" Tag="cmd:closeActive" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+W" />
                 <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="刷题模式…" Tag="cmd:practice" Click="MenuCommand_Click" />
+                <MenuFlyoutSeparator />
                 <MenuFlyoutItem Text="退出" Tag="cmd:exit" Click="MenuCommand_Click" />
             </MenuBarItem>
 
@@ -410,6 +412,12 @@
                                 <TextBlock Text="新建 C++ 文件（Ctrl+N）" VerticalAlignment="Center" />
                             </StackPanel>
                         </Button>
+                        <Button Style="{StaticResource WelcomeActionButtonStyle}" Tag="w:practice" Click="WelcomeAction_Click" AutomationProperties.Name="刷题模式" AutomationProperties.AutomationId="PracticeWelcomeButton">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <FontIcon Glyph="&#xE82D;" FontSize="16" />
+                                <TextBlock Text="刷题模式" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
                         <Button Style="{StaticResource WelcomeActionButtonStyle}" Tag="w:settings" Click="WelcomeAction_Click" AutomationProperties.Name="设置">
                             <StackPanel Orientation="Horizontal" Spacing="12">
                                 <FontIcon Glyph="&#xE713;" FontSize="16" />
@@ -432,6 +440,15 @@
                     <TranslateTransform x:Name="SettingsTransform" />
                 </local:SettingsView.RenderTransform>
             </local:SettingsView>
+        </Grid>
+
+        <!-- 刷题模式：独立界面，没有侧栏和菜单栏；左上角图标变成「回家」 -->
+        <Grid
+            x:Name="PracticeOverlay"
+            Grid.Row="1"
+            Grid.RowSpan="2"
+            Visibility="Collapsed">
+            <local:PracticeView x:Name="PracticeViewControl" />
         </Grid>
     </Grid>
 </Window>

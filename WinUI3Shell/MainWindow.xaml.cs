@@ -40,6 +40,12 @@ public sealed partial class MainWindow : Window
     private string? _rootFolderPath;
     private AppSettings _settings = AppSettings.Load();
 
+    /// <summary>是否存在未保存的标签页（由编辑器的 tabsChanged 消息同步）。</summary>
+    private bool _hasUnsavedFiles;
+
+    /// <summary>关闭确认已通过，再次进入 Closing 时直接放行。</summary>
+    private bool _closeConfirmed;
+
     private static readonly SolidColorBrush SelectedActivityBrush =
         new(Color.FromArgb(0x33, 0x00, 0x78, 0xD4));
 
@@ -92,8 +98,57 @@ public sealed partial class MainWindow : Window
         // 启动时套用保存下来的应用主题
         ApplyAppTheme();
 
-        // 窗口关闭时清理所有终端进程
+        // 窗口关闭时清理所有终端进程；若有未保存文件先弹确认框
+        AppWindow.Closing += AppWindow_Closing;
         Closed += (_, _) => KillAllTerminals();
+    }
+
+    /// <summary>
+    /// 窗口关闭拦截：有未保存文件时取消关闭并弹确认框。
+    /// ContentDialog 是异步的，AppWindow.Closing 本身是同步事件，所以先 args.Cancel=true 取消关闭，
+    /// 再异步弹框，用户确认后用 _closeConfirmed 标记放行并再次 Close()。
+    /// </summary>
+    private void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
+    {
+        if (_closeConfirmed)
+        {
+            return;
+        }
+
+        if (!_hasUnsavedFiles)
+        {
+            return;
+        }
+
+        args.Cancel = true;
+        _ = AskCloseConfirmationAsync();
+    }
+
+    private async Task AskCloseConfirmationAsync()
+    {
+        var dialog = new ContentDialog
+        {
+            Title = "未保存的更改",
+            Content = "有文件存在未保存的更改，关闭后将丢失这些更改。是否保存？",
+            PrimaryButtonText = "保存",
+            SecondaryButtonText = "不保存",
+            CloseButtonText = "取消",
+            XamlRoot = RootGrid.XamlRoot,
+        };
+
+        ContentDialogResult result = await dialog.ShowAsync();
+
+        if (result == ContentDialogResult.Primary)
+        {
+            // 让编辑器批量保存所有脏标签，保存完成后回传 saveAllDone 再关闭
+            SendCommand("saveAll");
+        }
+        else if (result == ContentDialogResult.Secondary)
+        {
+            _closeConfirmed = true;
+            Close();
+        }
+        // 取消：什么都不做，窗口保持打开
     }
 
     /// <summary>切换整个窗口的主题（ElementTheme.Default 表示跟随系统）。</summary>
@@ -138,6 +193,9 @@ public sealed partial class MainWindow : Window
                 break;
             case "w:settings":
                 ShowSettings();
+                break;
+            case "w:practice":
+                ShowPractice();
                 break;
         }
     }
@@ -299,6 +357,7 @@ public sealed partial class MainWindow : Window
                 break;
             case "tabsChanged": {
                 int count = message["count"]?.GetValue<int>() ?? 0;
+                _hasUnsavedFiles = message["hasUnsaved"]?.GetValue<bool>() ?? false;
                 UpdateWelcomeVisibility(count);
                 UpdateRunButtonVisibility(message["name"]?.GetValue<string>());
                 break;
@@ -325,9 +384,26 @@ public sealed partial class MainWindow : Window
             case "editorStateChanged":
                 ApplyEditorState(message);
                 break;
+            case "setEncoding":
+                string? encoding = message["value"]?.GetValue<string>();
+                if (encoding is "utf8" or "utf8bom" or "gbk")
+                {
+                    _settings.SaveEncoding = encoding;
+                    _settings.Save();
+                }
+                break;
             case "autoSave":
                 _ = HandleAutoSaveAsync(message);
                 break;
+            case "saveAllDone": {
+                bool cancelled = message["cancelled"]?.GetValue<bool>() ?? false;
+                if (!cancelled)
+                {
+                    _closeConfirmed = true;
+                    Close();
+                }
+                break;
+            }
         }
     }
 
@@ -388,6 +464,8 @@ public sealed partial class MainWindow : Window
             path = await ShowSaveDialogAsync(name, filter);
             if (path is null)
             {
+                // 用户取消了保存对话框。若编辑器正在批量保存，通知它中止并放弃关闭。
+                SendToEditor(new { type = "saveCancelled" });
                 return;
             }
 
@@ -402,6 +480,7 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             await ShowMessageAsync("保存失败", ex.Message);
+            SendToEditor(new { type = "saveCancelled" });
         }
     }
 
@@ -478,6 +557,9 @@ public sealed partial class MainWindow : Window
                 return PickAndOpenFileAsync();
             case "openFolder":
                 return PickAndOpenFolderAsync();
+            case "practice":
+                ShowPractice();
+                return Task.CompletedTask;
             case "exit":
                 Close();
                 return Task.CompletedTask;
@@ -806,18 +888,73 @@ public sealed partial class MainWindow : Window
 
     private void UpdateSettingsTitleBar()
     {
-        TitleTextBlock.Text = _settingsOpen ? "MnyC++ IDE - 设置" : "MnyC++ IDE";
-        TitleAppIcon.Visibility = _settingsOpen ? Visibility.Collapsed : Visibility.Visible;
-        TitleIconButton.Visibility = _settingsOpen ? Visibility.Visible : Visibility.Collapsed;
-        TitleIconButton.IsHitTestVisible = _settingsOpen;
-        ToolTipService.SetToolTip(TitleIconButton, _settingsOpen ? "返回主页" : null);
+        bool overlay = _settingsOpen || _practiceOpen;
+        TitleTextBlock.Text = _settingsOpen
+            ? "MnyC++ IDE - 设置"
+            : _practiceOpen ? "MnyC++ IDE - 刷题模式" : "MnyC++ IDE";
+        TitleAppIcon.Visibility = overlay ? Visibility.Collapsed : Visibility.Visible;
+        TitleIconButton.Visibility = overlay ? Visibility.Visible : Visibility.Collapsed;
+        TitleIconButton.IsHitTestVisible = overlay;
+        TitleIconGlyph.Glyph = "\uE80F";
+        ToolTipService.SetToolTip(
+            TitleIconButton,
+            _practiceOpen ? "回到默认模式" : _settingsOpen ? "返回主页" : null);
+        SettingsButton.Visibility = _practiceOpen ? Visibility.Collapsed : Visibility.Visible;
         SettingsButtonIcon.Glyph = "\uE713";
         ToolTipService.SetToolTip(SettingsButton, "设置");
     }
 
+    /* ---------------- 刷题模式 ---------------- */
+
+    private bool _practiceOpen;
+
+    /// <summary>打开刷题模式：隐藏菜单栏和主编辑区，整个内容区换成刷题界面。</summary>
+    private void ShowPractice()
+    {
+        if (_practiceOpen)
+        {
+            return;
+        }
+
+        if (_settingsOpen)
+        {
+            HideSettings();
+        }
+
+        _practiceOpen = true;
+        UpdateSettingsTitleBar();
+        MenuBarArea.Visibility = Visibility.Collapsed;
+        MainContentArea.Visibility = Visibility.Collapsed;
+        PracticeOverlay.Visibility = Visibility.Visible;
+        PracticeViewControl.Activate(_settings);
+        UpdateTerminalButtonState();
+    }
+
+    /// <summary>回家：从刷题模式回到默认 IDE 界面（编辑器和文件状态保持不变）。</summary>
+    private void HidePractice()
+    {
+        if (!_practiceOpen)
+        {
+            return;
+        }
+
+        _practiceOpen = false;
+        PracticeViewControl.Suspend();
+        PracticeOverlay.Visibility = Visibility.Collapsed;
+        MenuBarArea.Visibility = Visibility.Visible;
+        MainContentArea.Visibility = Visibility.Visible;
+        UpdateSettingsTitleBar();
+        UpdateTerminalButtonState();
+        SendCommand("focus");
+    }
+
     private void TitleIconButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_settingsOpen)
+        if (_practiceOpen)
+        {
+            HidePractice();
+        }
+        else if (_settingsOpen)
         {
             HideSettings();
         }
@@ -1012,6 +1149,7 @@ public sealed partial class MainWindow : Window
         ApplyAppTheme();
         SendSettingsToEditor();
         SettingsViewControl.ApplyAppearance(_settings);
+        PracticeViewControl.ApplySettings(_settings);
     }
 
     /// <summary>按设置切换应用主题（跟随系统时交给系统决定）。</summary>
@@ -1054,6 +1192,7 @@ public sealed partial class MainWindow : Window
             occurrencesHighlight = _settings.EditorOccurrencesHighlight,
             autoSave = _settings.AutoSave,
             autoSaveSeconds = _settings.AutoSaveSeconds,
+            saveEncoding = _settings.SaveEncoding,
         });
     }
 
@@ -1136,6 +1275,7 @@ public sealed partial class MainWindow : Window
     {
         TerminalMenuItem.IsEnabled =
             _editorReady
+            && !_practiceOpen
             && EditorWebView.Visibility == Visibility.Visible
             && SettingsOverlay.Visibility != Visibility.Visible;
     }
@@ -1143,6 +1283,12 @@ public sealed partial class MainWindow : Window
     /// <summary>XAML 层的快捷键：焦点在文件树、菜单、欢迎页等控件上时生效。</summary>
     private void Shortcut_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
+        // 刷题模式下快捷键不应传给主编辑器（避免误触编译/运行）
+        if (_practiceOpen)
+        {
+            return;
+        }
+
         bool control = sender.Modifiers.HasFlag(Windows.System.VirtualKeyModifiers.Control);
         bool shift = sender.Modifiers.HasFlag(Windows.System.VirtualKeyModifiers.Shift);
 
@@ -1187,6 +1333,14 @@ public sealed partial class MainWindow : Window
     /// <summary>设置页打开时用 Esc 关闭设置（焦点落在下拉框等控件上时的兜底）。</summary>
     private void Escape_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
+        if (_practiceOpen)
+        {
+            // 刷题模式下 Esc 只负责收起登录浮层，不退出刷题模式
+            args.Handled = true;
+            PracticeViewControl.HandleEscape();
+            return;
+        }
+
         if (!_settingsOpen)
         {
             return;

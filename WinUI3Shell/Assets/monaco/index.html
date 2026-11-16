@@ -38,6 +38,7 @@
     --vh-operator: #0451a5;
     --vh-delimiter: #333;
     --vh-function: #795e26;
+    --vh-variable: #001080;
   }
   html[data-theme="dark"] {
     color-scheme: dark;
@@ -67,6 +68,7 @@
     --vh-operator: #56b6c2;
     --vh-delimiter: #a6adba;
     --vh-function: #61afef;
+    --vh-variable: #9cdcfe;
   }
   /* html 透明，body 自己画圆角：这样编辑器卡片的四角不会被 WebView2 的方形表面盖住 */
   html { background: transparent; }
@@ -74,15 +76,27 @@
     font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif; }
   body {
     display: flex; flex-direction: column; background: var(--bg);
-    border-radius: 11px 11px 0 11px; overflow: hidden;
+    /* 和 XAML 那边 Border 的 12px 圆角保持一致，避免圆角外露出一块方形底色 */
+    border-radius: 12px 12px 0 12px; overflow: hidden;
+    clip-path: inset(0 0 0 0 round 12px 12px 0 12px);
   }
   #tabs {
     display: flex; align-items: stretch; flex: 0 0 auto;
     height: 34px; overflow-x: auto; overflow-y: hidden;
     background: var(--tabs-bg); border-bottom: 1px solid var(--border);
-    border-radius: 11px 11px 0 0;
+    border-radius: 12px 12px 0 0;
   }
   #tabs::-webkit-scrollbar { height: 4px; }
+  /* 标签栏末尾的新建按钮，滚动时固定在右侧 */
+  .tab-add {
+    position: sticky; right: 0; flex: 0 0 34px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: inherit; font-size: 15px; line-height: 1;
+    color: var(--tab-text); background: var(--tabs-bg);
+    border: none; border-left: 1px solid var(--border);
+    cursor: pointer; user-select: none; padding: 0;
+  }
+  .tab-add:hover { background: var(--tab-active); }
   .tab {
     display: flex; align-items: center; gap: 8px; padding: 0 8px 0 12px;
     font-size: 12px; color: var(--tab-text); border-right: 1px solid var(--border);
@@ -108,10 +122,7 @@
     flex: 1 1 auto; min-height: 0;
     background: var(--editor-bg); overflow: hidden;
   }
-  /* 面板折叠时编辑器是整个卡片的底边，需要自己画底部圆角；展开时交给 #panel */
-  body:has(#panel.collapsed) #editor {
-    border-bottom-left-radius: 11px;
-  }
+  /* 面板折叠时编辑器是整个卡片的底边，圆角由 body 统一裁切 */
 
   /* 大文件 Alt+F 局部着色：只通过装饰器改颜色，不开启全文语言模式 */
   .mny-vh-comment { color: var(--vh-comment) !important; font-style: italic; }
@@ -123,19 +134,36 @@
   .mny-vh-operator { color: var(--vh-operator) !important; }
   .mny-vh-delimiter { color: var(--vh-delimiter) !important; }
 
-  /* 语义着色（函数、std、库符号、自定义类型）同样只改颜色，不动排版 */
+  /* 语义着色（函数、变量、std、库符号、自定义类型）同样只改颜色，不动排版 */
   .mny-sem-keyword { color: var(--vh-keyword) !important; }
   .mny-sem-type { color: var(--vh-type) !important; }
   .mny-sem-function { color: var(--vh-function) !important; }
+  .mny-sem-variable { color: var(--vh-variable) !important; }
 
   /* ---- 终端面板（仿 VS Code 底部面板） ---- */
   #panel {
     flex: 0 0 auto; height: 220px; display: flex; flex-direction: column;
     border-top: 1px solid var(--border); background: var(--panel-bg);
-    border-radius: 0 0 0 11px;
+    border-radius: 0;
     overflow: hidden;
   }
   #panel.collapsed { display: none; }
+
+  /* ---- 底部状态栏 ---- */
+  #statusbar {
+    flex: 0 0 auto; height: 24px; display: flex; align-items: center;
+    justify-content: flex-end; gap: 10px; padding: 0 10px;
+    background: var(--tabs-bg); border-top: 1px solid var(--border);
+    border-bottom-left-radius: 12px;
+    font-size: 11px; color: var(--text-muted); user-select: none;
+  }
+  #encodingSelect {
+    font-family: inherit; font-size: 11px; color: var(--text-muted);
+    background: transparent; border: 1px solid transparent; border-radius: 6px;
+    padding: 1px 4px; cursor: pointer; outline: none;
+  }
+  #encodingSelect:hover { border-color: var(--border); color: var(--text); }
+  #encodingSelect option { background: var(--tabs-bg); color: var(--text); }
   .panel-header {
     display: flex; align-items: center; gap: 2px;
     height: 32px; padding: 0 8px 0 12px; flex: 0 0 auto;
@@ -202,6 +230,16 @@
       <div class="term-tabs" id="termTabs"></div>
       <div class="term-body" id="termBody"></div>
     </div>
+  </div>
+
+  <!-- 状态栏：光标行列 + 保存编码 -->
+  <div id="statusbar">
+    <span id="cursorPos">行 1，列 1</span>
+    <select id="encodingSelect">
+      <option value="utf8">UTF-8</option>
+      <option value="utf8bom">UTF-8 BOM</option>
+      <option value="gbk">GBK</option>
+    </select>
   </div>
   <script src="./vs/loader.js"></script>
   <script>

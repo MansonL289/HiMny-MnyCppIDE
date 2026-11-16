@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="vendor/katex/katex.min.css" />
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #ffffff;
+    --text: #1f2328;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --code-bg: #f6f8fa;
+    --accent: #0078d4;
+    --quote-bg: #f3f6fb;
+    --quote-border: #c9d8ea;
+  }
+  html[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #1e2027;
+    --text: #e6e6e6;
+    --muted: #9aa4b2;
+    --border: #343741;
+    --code-bg: #16181d;
+    --accent: #4cc2ff;
+    --quote-bg: #232733;
+    --quote-border: #3a4356;
+  }
+  html { background: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", "Microsoft YaHei UI", -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.7;
+    border-radius: 12px;
+    overflow: hidden;
+    clip-path: inset(0 round 12px);
+  }
+  #scroll {
+    height: 100%;
+    overflow-y: auto;
+    padding: 0 22px 32px;
+    box-sizing: border-box;
+  }
+  #scroll::-webkit-scrollbar { width: 10px; }
+  #scroll::-webkit-scrollbar-thumb {
+    background: rgba(128,128,128,.35); border-radius: 6px;
+    border: 3px solid transparent; background-clip: content-box;
+  }
+  #head { padding: 18px 0 10px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+  #title { font-size: 20px; font-weight: 600; margin: 0 0 6px; line-height: 1.4; }
+  #meta { font-size: 12px; color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; }
+  #content h1, #content h2, #content h3, #content h4 { line-height: 1.4; margin: 22px 0 10px; }
+  #content h2 { font-size: 17px; }
+  #content h3 { font-size: 15px; }
+  #content p { margin: 8px 0; }
+  #content a { color: var(--accent); text-decoration: none; }
+  #content a:hover { text-decoration: underline; }
+  #content code {
+    font-family: "Cascadia Mono", Consolas, monospace;
+    font-size: 12.5px;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+  #content pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    overflow-x: auto;
+    margin: 10px 0;
+  }
+  #content pre code { background: none; border: none; padding: 0; font-size: 12.5px; line-height: 1.55; }
+  #content blockquote {
+    margin: 10px 0; padding: 8px 14px;
+    background: var(--quote-bg);
+    border-left: 3px solid var(--quote-border);
+    border-radius: 0 8px 8px 0;
+    color: var(--text);
+  }
+  #content ul, #content ol { padding-left: 24px; margin: 8px 0; }
+  #content img { max-width: 100%; }
+  #content table { border-collapse: collapse; margin: 10px 0; }
+  #content th, #content td { border: 1px solid var(--border); padding: 5px 10px; }
+  #content hr { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
+  #status { color: var(--muted); font-size: 13px; padding: 40px 0; text-align: center; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px;
+    background: rgba(0,120,212,.12); color: var(--accent); }
+</style>
+</head>
+<body>
+  <div id="scroll">
+    <div id="head" style="display:none">
+      <h1 id="title"></h1>
+      <div id="meta"></div>
+    </div>
+    <div id="content"></div>
+    <div id="status">正在准备题面…</div>
+  </div>
+
+  <script src="vendor/markdown-it.min.js"></script>
+  <script src="vendor/katex/katex.min.js"></script>
+  <script>
+    'use strict';
+    const post = (payload) => {
+      if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage(payload);
+      }
+    };
+
+    const md = window.markdownit({ html: true, linkify: true, breaks: false });
+    const contentEl = document.getElementById('content');
+    const statusEl = document.getElementById('status');
+    const headEl = document.getElementById('head');
+    const titleEl = document.getElementById('title');
+    const metaEl = document.getElementById('meta');
+    let baseUrl = '';
+
+    function setTheme(theme) {
+      document.documentElement.dataset.theme = theme === 'dark' ? 'dark' : 'light';
+    }
+
+    // CF 用 $$$…$$$ / $$$$$$…$$$$$$，AtCoder 用 \(…\) / \[…\]，洛谷用 $…$ / $$…$$
+    function normalizeMath(src) {
+      return src
+        .replace(/\$\$\$\$\$\$([\s\S]+?)\$\$\$\$\$\$/g, (m, t) => '$$' + t + '$$')
+        .replace(/\$\$\$\$([\s\S]+?)\$\$\$\$/g, (m, t) => '$$' + t + '$$')
+        .replace(/\$\$\$([\s\S]+?)\$\$\$/g, (m, t) => '$' + t + '$')
+        .replace(/\\\[([\s\S]+?)\\\]/g, (m, t) => '$$' + t + '$$')
+        .replace(/\\\(([\s\S]+?)\\\)/g, (m, t) => '$' + t + '$');
+    }
+
+    // 先把公式抽成占位符，渲染完再交给 KaTeX，避免公式里的 _ * \ 被 Markdown 吃掉
+    function extractMath(src) {
+      const maths = [];
+      const parts = src.split(/(```[\s\S]*?```)/);
+      for (let i = 0; i < parts.length; i += 2) {
+        parts[i] = parts[i]
+          .replace(/\$\$([\s\S]+?)\$\$/g, (m, tex) => {
+            maths.push({ tex, display: true });
+            return '\n\n@@MATH' + (maths.length - 1) + '@@\n\n';
+          })
+          .replace(/\$([^$\n]+?)\$/g, (m, tex) => {
+            maths.push({ tex, display: false });
+            return '@@MATH' + (maths.length - 1) + '@@';
+          });
+      }
+      return { text: parts.join(''), maths };
+    }
+
+    function renderMath(html, maths) {
+      return html.replace(/@@MATH(\d+)@@/g, (m, idx) => {
+        const item = maths[Number(idx)];
+        if (!item) return m;
+        try {
+          return katex.renderToString(item.tex, {
+            displayMode: item.display,
+            throwOnError: false,
+            strict: false,
+            macros: { '\\bm': '\\boldsymbol' },
+          });
+        } catch (e) {
+          return '<span>' + item.tex.replace(/[<>&]/g, '') + '</span>';
+        }
+      });
+    }
+
+    function absolutize(root) {
+      root.querySelectorAll('a[href]').forEach((a) => {
+        const href = a.getAttribute('href');
+        if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+        try { a.href = new URL(href, baseUrl || location.href).href; } catch (e) { /* ignore */ }
+      });
+      root.querySelectorAll('img[src]').forEach((img) => {
+        const src = img.getAttribute('src');
+        if (src && !/^(https?:|data:)/i.test(src)) {
+          try { img.src = new URL(src, baseUrl || location.href).href; } catch (e) { /* ignore */ }
+        }
+      });
+    }
+
+    function render(payload) {
+      baseUrl = payload.baseUrl || '';
+      setTheme(payload.theme);
+      titleEl.textContent = payload.title || '题目';
+      const meta = [];
+      if (payload.oj) meta.push('<span class="badge">' + escapeHtml(payload.oj) + '</span>');
+      if (payload.meta) meta.push('<span>' + escapeHtml(payload.meta) + '</span>');
+      metaEl.innerHTML = meta.join('');
+      headEl.style.display = 'block';
+
+      const source = normalizeMath(payload.markdown || '');
+      const extracted = extractMath(source);
+      let html = md.render(extracted.text);
+      html = renderMath(html, extracted.maths);
+      contentEl.innerHTML = html;
+      absolutize(contentEl);
+      statusEl.style.display = 'none';
+      document.getElementById('scroll').scrollTop = 0;
+    }
+
+    function escapeHtml(text) {
+      return String(text).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    }
+
+    contentEl.addEventListener('click', (e) => {
+      const a = e.target.closest('a');
+      if (!a) return;
+      const href = a.getAttribute('href') || '';
+      if (!/^https?:/i.test(href)) return;
+      e.preventDefault();
+      post({ type: 'openExternal', url: href });
+    });
+
+    if (window.chrome && window.chrome.webview) {
+      window.chrome.webview.addEventListener('message', (e) => {
+        const msg = e.data || {};
+        if (msg.type === 'render') render(msg);
+        else if (msg.type === 'theme') setTheme(msg.theme);
+        else if (msg.type === 'loading') {
+          statusEl.style.display = 'block';
+          statusEl.textContent = msg.text || '正在抓取题面…';
+          contentEl.innerHTML = '';
+          headEl.style.display = 'none';
+        }
+        else if (msg.type === 'error') {
+          statusEl.style.display = 'block';
+          statusEl.textContent = msg.text || '题面抓取失败';
+          contentEl.innerHTML = '';
+          headEl.style.display = 'none';
+        }
+      });
+    }
+
+    post({ type: 'ready' });
+  </script>
+</body>
+</html>

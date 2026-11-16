@@ -5,12 +5,50 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <UserControl.Resources>
+        <!-- 分组卡片：只负责圆角、描边和背景，内边距交给行控制 -->
         <Style x:Key="SettingsCardStyle" TargetType="Border">
             <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="8" />
-            <Setter Property="Padding" Value="16" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+
+        <!-- 卡片头部标题 -->
+        <Style x:Key="SettingsCardHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Padding" Value="16,12,16,4" />
+        </Style>
+
+        <!-- 行式设置项：图标 + 标题/说明 + 右侧控件 -->
+        <Style x:Key="SettingRowStyle" TargetType="Grid">
+            <Setter Property="MinHeight" Value="56" />
+            <Setter Property="Padding" Value="16,8,12,8" />
+            <Setter Property="ColumnSpacing" Value="12" />
+        </Style>
+
+        <!-- 行左侧图标 -->
+        <Style x:Key="SettingIconStyle" TargetType="FontIcon">
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons" />
+            <Setter Property="FontSize" Value="20" />
+            <Setter Property="Width" Value="20" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+        </Style>
+
+        <!-- 行与行之间的 1px 分隔线 -->
+        <Style x:Key="SettingDividerStyle" TargetType="Rectangle">
+            <Setter Property="Height" Value="1" />
+            <Setter Property="Fill" Value="{ThemeResource DividerStrokeColorDefaultBrush}" />
+            <Setter Property="Margin" Value="16,0,12,0" />
+        </Style>
+
+        <!-- 设置项次要说明文字 -->
+        <Style x:Key="SettingDescriptionStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
         </Style>
 
         <!-- 代码输入框：等宽字体 + 圆角描边，模仿 Monaco 代码块的观感 -->
@@ -34,25 +72,41 @@
         <Style x:Key="SettingLabelStyle" TargetType="TextBlock">
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="TextWrapping" Value="Wrap" />
-            <Setter Property="Margin" Value="0,0,16,0" />
+            <Setter Property="Margin" Value="0" />
         </Style>
 
-        <!-- 设置项右侧控件统一尺寸 -->
-        <Style x:Key="SettingComboStyle" TargetType="ComboBox">
+        <!-- 设置项右侧控件统一尺寸，外观对齐 Windows 11 设置页的下拉框 -->
+        <Style x:Key="SettingComboStyle" TargetType="ComboBox" BasedOn="{StaticResource DefaultComboBoxStyle}">
             <Setter Property="MinWidth" Value="200" />
             <Setter Property="HorizontalAlignment" Value="Right" />
             <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="MinHeight" Value="32" />
+            <Setter Property="Padding" Value="12,0,8,0" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Background" Value="{ThemeResource ControlFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
         </Style>
 
         <Style x:Key="SettingNumberStyle" TargetType="NumberBox">
             <Setter Property="MinWidth" Value="120" />
+            <Setter Property="MinHeight" Value="32" />
             <Setter Property="HorizontalAlignment" Value="Right" />
             <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="CornerRadius" Value="4" />
             <Setter Property="SpinButtonPlacementMode" Value="Compact" />
             <Setter Property="SmallChange" Value="1" />
         </Style>
 
         <Style x:Key="SettingSwitchStyle" TargetType="ToggleSwitch">
+            <!-- 默认样式的 MinWidth 为容纳“开/关”文字预留了 154px，会让开关本身离右边缘很远；
+                 轨道本身加上内边距约 48px，宽度小于它会把胶囊右侧裁掉 -->
+            <Setter Property="MinWidth" Value="0" />
+            <!-- 默认 MinHeight=32 会把控件撑得比胶囊(20)高，胶囊在内部垂直居中，
+                 与同一行文字相比就会往下掉一截 -->
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Width" Value="48" />
             <Setter Property="HorizontalAlignment" Value="Right" />
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="OffContent" Value="" />
@@ -97,7 +151,7 @@
                 </NavigationViewItem>
             </NavigationView.MenuItems>
 
-            <Grid>
+            <Grid MaxWidth="1100">
                 <!-- ===== 通用 ===== -->
                 <ScrollViewer x:Name="GeneralPane" Padding="16" VerticalScrollBarVisibility="Auto">
                     <!-- 页面切换：淡入 + 横向滑动，用 WinUI 3 的隐式过渡 -->
@@ -107,22 +161,25 @@
                     <ScrollViewer.TranslationTransition>
                         <Vector3Transition Duration="0:0:0.18" />
                     </ScrollViewer.TranslationTransition>
-                    <StackPanel Spacing="14">
+                    <StackPanel>
 
                         <Border Style="{StaticResource SettingsCardStyle}">
-                            <StackPanel Spacing="12">
-                                <TextBlock
-                                    Text="外观"
-                                    Style="{StaticResource BodyStrongTextBlockStyle}" />
+                            <StackPanel>
+                                <TextBlock Text="外观" Style="{StaticResource SettingsCardHeaderStyle}" />
 
-                                <Grid ColumnSpacing="16">
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="应用主题" Style="{StaticResource SettingLabelStyle}" />
+                                    <FontIcon Grid.Column="0" Glyph="&#xE790;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="应用主题" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="选择界面跟随系统还是固定明暗" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
                                     <ComboBox
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         x:Name="AppThemeBox"
                                         Style="{StaticResource SettingComboStyle}"
                                         SelectionChanged="AppThemeBox_SelectionChanged">
@@ -132,14 +189,21 @@
                                     </ComboBox>
                                 </Grid>
 
-                                <Grid ColumnSpacing="16">
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="编辑器主题" Style="{StaticResource SettingLabelStyle}" />
+                                    <FontIcon Grid.Column="0" Glyph="&#xE771;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="编辑器主题" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="代码区域的配色，可与界面主题不同" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
                                     <ComboBox
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         x:Name="EditorThemeBox"
                                         Style="{StaticResource SettingComboStyle}"
                                         SelectionChanged="EditorThemeBox_SelectionChanged">
@@ -149,13 +213,20 @@
                                     </ComboBox>
                                 </Grid>
 
-                                <Grid ColumnSpacing="16">
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="界面缩放" Style="{StaticResource SettingLabelStyle}" />
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                    <FontIcon Grid.Column="0" Glyph="&#xE8A3;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="界面缩放" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="整体放大或缩小界面文字与控件" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                         <!-- 上下限在代码里赋值：XAML 解析时先设 Minimum 会直接抛异常 -->
                                         <Slider
                                             x:Name="UiZoomSlider"
@@ -175,47 +246,64 @@
                         </Border>
 
                         <Border Style="{StaticResource SettingsCardStyle}">
-                            <StackPanel Spacing="12">
-                                <TextBlock
-                                    Text="文件"
-                                    Style="{StaticResource BodyStrongTextBlockStyle}" />
+                            <StackPanel>
+                                <TextBlock Text="文件" Style="{StaticResource SettingsCardHeaderStyle}" />
 
-                                <Grid ColumnSpacing="16">
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="自动保存" Style="{StaticResource SettingLabelStyle}" />
+                                    <FontIcon Grid.Column="0" Glyph="&#xE74E;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="自动保存" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="内容变动后自动写入磁盘" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
                                     <ToggleSwitch
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         x:Name="AutoSaveSwitch"
                                         Style="{StaticResource SettingSwitchStyle}"
                                         Toggled="AutoSaveSwitch_Toggled" />
                                 </Grid>
 
-                                <Grid ColumnSpacing="16">
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="自动保存间隔" Style="{StaticResource SettingLabelStyle}" />
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                    <FontIcon Grid.Column="0" Glyph="&#xE823;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="自动保存间隔" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="两次自动保存之间的等待时间" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                         <NumberBox
                                             x:Name="AutoSaveSecondsBox"
                                             Style="{StaticResource SettingNumberStyle}"
                                             ValueChanged="AutoSaveSecondsBox_ValueChanged" />
-                                        <TextBlock Text="秒" VerticalAlignment="Center" Opacity="0.7" />
+                                        <TextBlock Text="秒" FontSize="12" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                     </StackPanel>
                                 </Grid>
 
-                                <Grid ColumnSpacing="16">
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="保存编码" Style="{StaticResource SettingLabelStyle}" />
+                                    <FontIcon Grid.Column="0" Glyph="&#xE8D2;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="保存编码" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="写入文件时使用的字符编码" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
                                     <ComboBox
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         x:Name="SaveEncodingBox"
                                         Style="{StaticResource SettingComboStyle}"
                                         SelectionChanged="SaveEncodingBox_SelectionChanged">
@@ -228,32 +316,42 @@
                         </Border>
 
                         <Border Style="{StaticResource SettingsCardStyle}">
-                            <StackPanel Spacing="12">
-                                <TextBlock
-                                    Text="终端"
-                                    Style="{StaticResource BodyStrongTextBlockStyle}" />
+                            <StackPanel>
+                                <TextBlock Text="终端" Style="{StaticResource SettingsCardHeaderStyle}" />
 
-                                <Grid ColumnSpacing="16">
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="运行结束后暂停" Style="{StaticResource SettingLabelStyle}" />
+                                    <FontIcon Grid.Column="0" Glyph="&#xE768;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="运行结束后暂停" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="程序退出后保留窗口，便于查看输出" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
                                     <ToggleSwitch
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         x:Name="PauseOnExitSwitch"
                                         Style="{StaticResource SettingSwitchStyle}"
                                         Toggled="PauseOnExitSwitch_Toggled" />
                                 </Grid>
 
-                                <Grid ColumnSpacing="16">
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="终端工作目录" Style="{StaticResource SettingLabelStyle}" />
+                                    <FontIcon Grid.Column="0" Glyph="&#xE756;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="终端工作目录" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="运行程序时终端使用的起始目录" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
                                     <ComboBox
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         x:Name="TerminalDirectoryBox"
                                         Style="{StaticResource SettingComboStyle}"
                                         SelectionChanged="TerminalDirectoryBox_SelectionChanged">
@@ -278,22 +376,25 @@
                     <ScrollViewer.TranslationTransition>
                         <Vector3Transition Duration="0:0:0.18" />
                     </ScrollViewer.TranslationTransition>
-                    <StackPanel Spacing="14">
+                    <StackPanel>
 
                         <Border Style="{StaticResource SettingsCardStyle}">
-                            <StackPanel Spacing="12">
-                                <TextBlock
-                                    Text="文字"
-                                    Style="{StaticResource BodyStrongTextBlockStyle}" />
+                            <StackPanel>
+                                <TextBlock Text="文字" Style="{StaticResource SettingsCardHeaderStyle}" />
 
-                                <Grid ColumnSpacing="16">
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="字体" Style="{StaticResource SettingLabelStyle}" />
+                                    <FontIcon Grid.Column="0" Glyph="&#xE8D2;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="字体" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="代码使用的显示字体，可直接输入字体名" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
                                     <ComboBox
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         x:Name="FontFamilyBox"
                                         Style="{StaticResource SettingComboStyle}"
                                         IsEditable="True"
@@ -310,40 +411,61 @@
                                     </ComboBox>
                                 </Grid>
 
-                                <Grid ColumnSpacing="16">
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="字号" Style="{StaticResource SettingLabelStyle}" />
+                                    <FontIcon Grid.Column="0" Glyph="&#xE8E9;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="字号" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="代码文字的大小" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
                                     <NumberBox
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         x:Name="FontSizeBox"
                                         Style="{StaticResource SettingNumberStyle}"
                                         ValueChanged="FontSizeBox_ValueChanged" />
                                 </Grid>
 
-                                <Grid ColumnSpacing="16">
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="字体连字" Style="{StaticResource SettingLabelStyle}" />
+                                    <FontIcon Grid.Column="0" Glyph="&#xE8D2;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="字体连字" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="启用 Fira Code 等字体的连字效果" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
                                     <ToggleSwitch
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         x:Name="FontLigaturesSwitch"
                                         Style="{StaticResource SettingSwitchStyle}"
                                         Toggled="FontLigaturesSwitch_Toggled" />
                                 </Grid>
 
-                                <Grid ColumnSpacing="16">
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="缩进方式" Style="{StaticResource SettingLabelStyle}" />
+                                    <FontIcon Grid.Column="0" Glyph="&#xE8FD;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="缩进方式" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="按 Tab 时插入空格还是制表符" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
                                     <ComboBox
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         x:Name="IndentBox"
                                         Style="{StaticResource SettingComboStyle}"
                                         SelectionChanged="IndentBox_SelectionChanged">
@@ -352,14 +474,21 @@
                                     </ComboBox>
                                 </Grid>
 
-                                <Grid ColumnSpacing="16">
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="缩进宽度" Style="{StaticResource SettingLabelStyle}" />
+                                    <FontIcon Grid.Column="0" Glyph="&#xE8FD;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="缩进宽度" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="一个缩进层级对应的字符宽度" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
                                     <NumberBox
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         x:Name="TabSizeBox"
                                         Style="{StaticResource SettingNumberStyle}"
                                         ValueChanged="TabSizeBox_ValueChanged" />
@@ -368,19 +497,22 @@
                         </Border>
 
                         <Border Style="{StaticResource SettingsCardStyle}">
-                            <StackPanel Spacing="12">
-                                <TextBlock
-                                    Text="显示"
-                                    Style="{StaticResource BodyStrongTextBlockStyle}" />
+                            <StackPanel>
+                                <TextBlock Text="显示" Style="{StaticResource SettingsCardHeaderStyle}" />
 
-                                <Grid ColumnSpacing="16">
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="自动换行" Style="{StaticResource SettingLabelStyle}" />
+                                    <FontIcon Grid.Column="0" Glyph="&#xE8A9;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="自动换行" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="长行超出视口时如何折行" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
                                     <ComboBox
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         x:Name="WordWrapBox"
                                         Style="{StaticResource SettingComboStyle}"
                                         SelectionChanged="WordWrapBox_SelectionChanged">
@@ -390,27 +522,41 @@
                                     </ComboBox>
                                 </Grid>
 
-                                <Grid ColumnSpacing="16">
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="迷你地图" Style="{StaticResource SettingLabelStyle}" />
+                                    <FontIcon Grid.Column="0" Glyph="&#xE8A1;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="迷你地图" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="在编辑器右侧显示代码缩略图" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
                                     <ToggleSwitch
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         x:Name="MinimapSwitch"
                                         Style="{StaticResource SettingSwitchStyle}"
                                         Toggled="MinimapSwitch_Toggled" />
                                 </Grid>
 
-                                <Grid ColumnSpacing="16">
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="空白字符" Style="{StaticResource SettingLabelStyle}" />
+                                    <FontIcon Grid.Column="0" Glyph="&#xE7C3;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="空白字符" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="空格与制表符等不可见字符的显示方式" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
                                     <ComboBox
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         x:Name="WhitespaceBox"
                                         Style="{StaticResource SettingComboStyle}"
                                         SelectionChanged="WhitespaceBox_SelectionChanged">
@@ -422,14 +568,21 @@
                                     </ComboBox>
                                 </Grid>
 
-                                <Grid ColumnSpacing="16">
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="光标样式" Style="{StaticResource SettingLabelStyle}" />
+                                    <FontIcon Grid.Column="0" Glyph="&#xE7F4;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="光标样式" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="编辑光标的外观" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
                                     <ComboBox
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         x:Name="CursorStyleBox"
                                         Style="{StaticResource SettingComboStyle}"
                                         SelectionChanged="CursorStyleBox_SelectionChanged">
@@ -442,14 +595,21 @@
                                     </ComboBox>
                                 </Grid>
 
-                                <Grid ColumnSpacing="16">
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="光标闪烁" Style="{StaticResource SettingLabelStyle}" />
+                                    <FontIcon Grid.Column="0" Glyph="&#xE7F4;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="光标闪烁" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="光标的闪烁动画方式" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
                                     <ComboBox
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         x:Name="CursorBlinkingBox"
                                         Style="{StaticResource SettingComboStyle}"
                                         SelectionChanged="CursorBlinkingBox_SelectionChanged">
@@ -461,102 +621,147 @@
                                     </ComboBox>
                                 </Grid>
 
-                                <Grid ColumnSpacing="16">
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="大文件模式阈值" Style="{StaticResource SettingLabelStyle}" />
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                    <FontIcon Grid.Column="0" Glyph="&#xE7C3;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="大文件模式阈值" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="超过该大小的文件会关闭部分功能以保持流畅" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                         <NumberBox
                                             x:Name="LargeFileBox"
                                             Style="{StaticResource SettingNumberStyle}"
                                             ValueChanged="LargeFileBox_ValueChanged" />
-                                        <TextBlock Text="MB" VerticalAlignment="Center" Opacity="0.7" />
+                                        <TextBlock Text="MB" FontSize="12" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                     </StackPanel>
                                 </Grid>
                             </StackPanel>
                         </Border>
 
                         <Border Style="{StaticResource SettingsCardStyle}">
-                            <StackPanel Spacing="12">
-                                <TextBlock
-                                    Text="代码辅助"
-                                    Style="{StaticResource BodyStrongTextBlockStyle}" />
+                            <StackPanel>
+                                <TextBlock Text="代码辅助" Style="{StaticResource SettingsCardHeaderStyle}" />
 
-                                <Grid ColumnSpacing="16">
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="代码补全" Style="{StaticResource SettingLabelStyle}" />
+                                    <FontIcon Grid.Column="0" Glyph="&#xE943;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="代码补全" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="输入时自动弹出补全建议" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
                                     <ToggleSwitch
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         x:Name="SuggestSwitch"
                                         Style="{StaticResource SettingSwitchStyle}"
                                         Toggled="SuggestSwitch_Toggled" />
                                 </Grid>
 
-                                <Grid ColumnSpacing="16">
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="参数提示" Style="{StaticResource SettingLabelStyle}" />
+                                    <FontIcon Grid.Column="0" Glyph="&#xE8F1;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="参数提示" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="输入函数调用时显示参数签名" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
                                     <ToggleSwitch
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         x:Name="ParameterHintsSwitch"
                                         Style="{StaticResource SettingSwitchStyle}"
                                         Toggled="ParameterHintsSwitch_Toggled" />
                                 </Grid>
 
-                                <Grid ColumnSpacing="16">
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="悬浮提示" Style="{StaticResource SettingLabelStyle}" />
+                                    <FontIcon Grid.Column="0" Glyph="&#xE946;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="悬浮提示" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="鼠标悬停在符号上时显示信息" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
                                     <ToggleSwitch
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         x:Name="HoverSwitch"
                                         Style="{StaticResource SettingSwitchStyle}"
                                         Toggled="HoverSwitch_Toggled" />
                                 </Grid>
 
-                                <Grid ColumnSpacing="16">
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="括号配对着色" Style="{StaticResource SettingLabelStyle}" />
+                                    <FontIcon Grid.Column="0" Glyph="&#xE943;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="括号配对着色" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="用不同颜色区分成对的括号" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
                                     <ToggleSwitch
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         x:Name="BracketColorizationSwitch"
                                         Style="{StaticResource SettingSwitchStyle}"
                                         Toggled="BracketColorizationSwitch_Toggled" />
                                 </Grid>
 
-                                <Grid ColumnSpacing="16">
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="粘性滚动" Style="{StaticResource SettingLabelStyle}" />
+                                    <FontIcon Grid.Column="0" Glyph="&#xE8A9;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="粘性滚动" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="滚动时把当前作用域固定在顶部" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
                                     <ToggleSwitch
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         x:Name="StickyScrollSwitch"
                                         Style="{StaticResource SettingSwitchStyle}"
                                         Toggled="StickyScrollSwitch_Toggled" />
                                 </Grid>
 
-                                <Grid ColumnSpacing="16">
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="标识符高亮" Style="{StaticResource SettingLabelStyle}" />
+                                    <FontIcon Grid.Column="0" Glyph="&#xE8D2;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="标识符高亮" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="高亮与光标处同名的标识符" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
                                     <ToggleSwitch
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         x:Name="OccurrencesHighlightSwitch"
                                         Style="{StaticResource SettingSwitchStyle}"
                                         Toggled="OccurrencesHighlightSwitch_Toggled" />
@@ -578,22 +783,25 @@
                     <ScrollViewer.TranslationTransition>
                         <Vector3Transition Duration="0:0:0.18" />
                     </ScrollViewer.TranslationTransition>
-                    <StackPanel Spacing="14">
+                    <StackPanel>
 
                         <Border Style="{StaticResource SettingsCardStyle}">
-                            <StackPanel Spacing="12">
-                                <TextBlock
-                                    Text="编译器"
-                                    Style="{StaticResource BodyStrongTextBlockStyle}" />
+                            <StackPanel>
+                                <TextBlock Text="编译器" Style="{StaticResource SettingsCardHeaderStyle}" />
 
-                                <Grid ColumnSpacing="16">
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="C++ 语言标准" Style="{StaticResource SettingLabelStyle}" />
+                                    <FontIcon Grid.Column="0" Glyph="&#xE7B8;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="C++ 语言标准" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="编译时使用的 C++ 标准版本" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
                                     <ComboBox
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         x:Name="StandardBox"
                                         Style="{StaticResource SettingComboStyle}"
                                         SelectionChanged="StandardBox_SelectionChanged">
@@ -605,14 +813,21 @@
                                     </ComboBox>
                                 </Grid>
 
-                                <Grid ColumnSpacing="16">
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="警告等级" Style="{StaticResource SettingLabelStyle}" />
+                                    <FontIcon Grid.Column="0" Glyph="&#xE7BA;" Style="{StaticResource SettingIconStyle}" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="警告等级" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="编译时启用的警告检查强度" Style="{StaticResource SettingDescriptionStyle}" />
+                                    </StackPanel>
                                     <ComboBox
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         x:Name="WarningBox"
                                         Style="{StaticResource SettingComboStyle}"
                                         SelectionChanged="WarningBox_SelectionChanged">
@@ -625,28 +840,80 @@
                         </Border>
 
                         <Border Style="{StaticResource SettingsCardStyle}">
-                            <StackPanel Spacing="10">
-                                <TextBlock
-                                    Text="编译时加入以下命令："
-                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                <TextBox
-                                    x:Name="CompilerFlagsBox"
-                                    Style="{StaticResource CodeTextBoxStyle}"
-                                    AutomationProperties.Name="编译时加入的命令"
-                                    TextChanged="CompilerFlags_TextChanged" />
-                            </StackPanel>
-                        </Border>
+                            <StackPanel>
+                                <TextBlock Text="编译选项" Style="{StaticResource SettingsCardHeaderStyle}" />
 
-                        <Border Style="{StaticResource SettingsCardStyle}">
-                            <StackPanel Spacing="10">
-                                <TextBlock
-                                    Text="在连接器命令行加入以下命令："
-                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                <TextBox
-                                    x:Name="LinkerFlagsBox"
-                                    Style="{StaticResource CodeTextBoxStyle}"
-                                    AutomationProperties.Name="连接器命令行加入的命令"
-                                    TextChanged="LinkerFlags_TextChanged" />
+                                <Grid Padding="16,4,12,8" ColumnSpacing="12" RowSpacing="6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <FontIcon
+                                        Grid.Row="0"
+                                        Glyph="&#xE7B8;"
+                                        Style="{StaticResource SettingIconStyle}" />
+                                    <TextBlock
+                                        Grid.Column="1"
+                                        VerticalAlignment="Center"
+                                        Text="编译时加入以下命令："
+                                        Style="{StaticResource SettingDescriptionStyle}" />
+                                    <ToggleSwitch
+                                        Grid.Column="1"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Center"
+                                        x:Name="CompilerFlagsSwitch"
+                                        Style="{StaticResource SettingSwitchStyle}"
+                                        Toggled="CompilerFlagsSwitch_Toggled" />
+                                    <TextBox
+                                        Grid.Row="1"
+                                        Grid.Column="1"
+                                        CornerRadius="8"
+                                        x:Name="CompilerFlagsBox"
+                                        Style="{StaticResource CodeTextBoxStyle}"
+                                        AutomationProperties.Name="编译时加入的命令"
+                                        TextChanged="CompilerFlags_TextChanged" />
+                                </Grid>
+
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <Grid Padding="16,8,12,16" ColumnSpacing="12" RowSpacing="6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <FontIcon
+                                        Grid.Row="0"
+                                        Glyph="&#xE71E;"
+                                        Style="{StaticResource SettingIconStyle}" />
+                                    <TextBlock
+                                        Grid.Column="1"
+                                        VerticalAlignment="Center"
+                                        Text="在连接器命令行加入以下命令："
+                                        Style="{StaticResource SettingDescriptionStyle}" />
+                                    <ToggleSwitch
+                                        Grid.Column="1"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Center"
+                                        x:Name="LinkerFlagsSwitch"
+                                        Style="{StaticResource SettingSwitchStyle}"
+                                        Toggled="LinkerFlagsSwitch_Toggled" />
+                                    <TextBox
+                                        Grid.Row="1"
+                                        Grid.Column="1"
+                                        CornerRadius="8"
+                                        x:Name="LinkerFlagsBox"
+                                        Style="{StaticResource CodeTextBoxStyle}"
+                                        AutomationProperties.Name="连接器命令行加入的命令"
+                                        TextChanged="LinkerFlags_TextChanged" />
+                                </Grid>
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -664,43 +931,51 @@
                     <ScrollViewer.TranslationTransition>
                         <Vector3Transition Duration="0:0:0.18" />
                     </ScrollViewer.TranslationTransition>
-                    <StackPanel Spacing="14">
+                    <StackPanel>
 
                         <Grid x:Name="TemplateChrome">
                             <Border Style="{StaticResource SettingsCardStyle}">
-                                <StackPanel Spacing="12">
-                                    <Grid ColumnSpacing="16">
+                                <StackPanel>
+                                    <TextBlock Text="模板内容" Style="{StaticResource SettingsCardHeaderStyle}" />
+
+                                    <Grid Style="{StaticResource SettingRowStyle}">
                                         <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="在新文件中插入以下代码" Style="{StaticResource SettingLabelStyle}" />
+                                        <FontIcon Grid.Column="0" Glyph="&#xE8F1;" Style="{StaticResource SettingIconStyle}" />
+                                        <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                            <TextBlock Text="在新文件中插入以下代码" Style="{StaticResource SettingLabelStyle}" />
+                                            <TextBlock Text="新建源文件时自动写入预设的模板代码" Style="{StaticResource SettingDescriptionStyle}" />
+                                        </StackPanel>
                                         <ToggleSwitch
-                                            Grid.Column="1"
+                                            Grid.Column="2"
                                             x:Name="InsertTemplateSwitch"
                                             Style="{StaticResource SettingSwitchStyle}"
                                             Toggled="InsertTemplateSwitch_Toggled" />
                                     </Grid>
+
+                                    <Border
+                                        x:Name="TemplateEditorBorder"
+                                        Height="240"
+                                        Margin="16,4,16,16"
+                                        CornerRadius="8"
+                                        BorderThickness="1"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
+                                        <Grid>
+                                            <WebView2 x:Name="TemplateWebView" />
+                                            <!-- WebView2 的画面不归 XAML 渲染，用它自己的背景色盖住再淡出，切页才有过渡 -->
+                                            <Border x:Name="TemplateEditorVeil" IsHitTestVisible="False" Opacity="0">
+                                                <Border.OpacityTransition>
+                                                    <ScalarTransition Duration="0:0:0.18" />
+                                                </Border.OpacityTransition>
+                                            </Border>
+                                        </Grid>
+                                    </Border>
                                 </StackPanel>
                             </Border>
                         </Grid>
-
-                        <Border
-                            x:Name="TemplateEditorBorder"
-                            Height="240"
-                            CornerRadius="8"
-                            BorderThickness="1"
-                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
-                            <Grid>
-                                <WebView2 x:Name="TemplateWebView" />
-                                <!-- WebView2 的画面不归 XAML 渲染，用它自己的背景色盖住再淡出，切页才有过渡 -->
-                                <Border x:Name="TemplateEditorVeil" IsHitTestVisible="False" Opacity="0">
-                                    <Border.OpacityTransition>
-                                        <ScalarTransition Duration="0:0:0.18" />
-                                    </Border.OpacityTransition>
-                                </Border>
-                            </Grid>
-                        </Border>
                     </StackPanel>
                 </ScrollViewer>
 
@@ -716,69 +991,140 @@
                     <ScrollViewer.TranslationTransition>
                         <Vector3Transition Duration="0:0:0.18" />
                     </ScrollViewer.TranslationTransition>
-                    <StackPanel Spacing="14">
+                    <StackPanel>
 
-                        <Border Style="{StaticResource SettingsCardStyle}">
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="MnyC++ IDE" Style="{StaticResource SubtitleTextBlockStyle}" />
-                                <TextBlock
-                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                    Text="版本 Beta_1.0.20261113" />
-                            </StackPanel>
-                        </Border>
-
-                        <Border Style="{StaticResource SettingsCardStyle}">
-                            <StackPanel Spacing="8">
-                                <TextBlock Text="硬件信息" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                                <TextBlock
-                                    x:Name="CpuText"
-                                    FontSize="12"
-                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                    TextWrapping="Wrap" />
-                                <TextBlock
-                                    x:Name="GpuText"
-                                    FontSize="12"
-                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                    TextWrapping="Wrap" />
-                                <TextBlock
-                                    x:Name="MemoryText"
-                                    FontSize="12"
-                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                    TextWrapping="Wrap" />
-                            </StackPanel>
-                        </Border>
-
-                        <Border Style="{StaticResource SettingsCardStyle}">
-                            <StackPanel Spacing="8">
-                                <TextBlock Text="反馈与意见" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                                <HyperlinkButton
-                                    Padding="0"
-                                    Content="https://github.com/MansonL289/HiMny-MnyCppIDE/issues"
-                                    NavigateUri="https://github.com/MansonL289/HiMny-MnyCppIDE/issues" />
-                            </StackPanel>
-                        </Border>
-
-                        <Border Style="{StaticResource SettingsCardStyle}">
-                            <StackPanel Spacing="8">
-                                <TextBlock Text="更新最新版" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                                <HyperlinkButton
-                                    Padding="0"
-                                    Content="https://github.com/MansonL289/HiMny-MnyCppIDE/tags"
-                                    NavigateUri="https://github.com/MansonL289/HiMny-MnyCppIDE/tags" />
-                                <StackPanel Orientation="Horizontal" Spacing="12">
-                                    <Button x:Name="CheckUpdateButton" Click="CheckUpdate_Click" Content="检查更新" />
-                                    <ProgressRing
-                                        x:Name="CheckRing"
-                                        Width="20"
-                                        Height="20"
-                                        VerticalAlignment="Center"
-                                        Visibility="Collapsed" />
+                        <Border Style="{StaticResource SettingsCardStyle}" Padding="16">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon
+                                    Grid.Column="0"
+                                    Glyph="&#xE946;"
+                                    Style="{StaticResource SettingIconStyle}"
+                                    FontSize="28"
+                                    Width="28" />
+                                <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+                                    <TextBlock Text="MnyC++ IDE" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                    <TextBlock
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        Text="版本 Beta_1.1.20261116" />
                                 </StackPanel>
-                                <TextBlock
-                                    x:Name="UpdateText"
-                                    FontSize="12"
-                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                    TextWrapping="Wrap" />
+                            </Grid>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingsCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="硬件信息" Style="{StaticResource SettingsCardHeaderStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <FontIcon Grid.Column="0" Glyph="&#xE950;" Style="{StaticResource SettingIconStyle}" />
+                                    <TextBlock
+                                        Grid.Column="1"
+                                        x:Name="CpuText"
+                                        FontSize="12"
+                                        VerticalAlignment="Center"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        TextWrapping="Wrap" />
+                                </Grid>
+
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <FontIcon Grid.Column="0" Glyph="&#xE7F4;" Style="{StaticResource SettingIconStyle}" />
+                                    <TextBlock
+                                        Grid.Column="1"
+                                        x:Name="GpuText"
+                                        FontSize="12"
+                                        VerticalAlignment="Center"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        TextWrapping="Wrap" />
+                                </Grid>
+
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <FontIcon Grid.Column="0" Glyph="&#xE8B7;" Style="{StaticResource SettingIconStyle}" />
+                                    <TextBlock
+                                        Grid.Column="1"
+                                        x:Name="MemoryText"
+                                        FontSize="12"
+                                        VerticalAlignment="Center"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        TextWrapping="Wrap" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingsCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="反馈与意见" Style="{StaticResource SettingsCardHeaderStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <FontIcon Grid.Column="0" Glyph="&#xE8BD;" Style="{StaticResource SettingIconStyle}" />
+                                    <HyperlinkButton
+                                        Grid.Column="1"
+                                        Padding="0"
+                                        VerticalAlignment="Center"
+                                        Content="https://github.com/MansonL289/HiMny-MnyCppIDE/issues"
+                                        NavigateUri="https://github.com/MansonL289/HiMny-MnyCppIDE/issues" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingsCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="更新最新版" Style="{StaticResource SettingsCardHeaderStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <FontIcon Grid.Column="0" Glyph="&#xE895;" Style="{StaticResource SettingIconStyle}" />
+                                    <HyperlinkButton
+                                        Grid.Column="1"
+                                        Padding="0"
+                                        VerticalAlignment="Center"
+                                        Content="https://github.com/MansonL289/HiMny-MnyCppIDE/tags"
+                                        NavigateUri="https://github.com/MansonL289/HiMny-MnyCppIDE/tags" />
+                                </Grid>
+
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <StackPanel Padding="16,8,16,16" Spacing="8">
+                                    <StackPanel Orientation="Horizontal" Spacing="12">
+                                        <Button x:Name="CheckUpdateButton" Click="CheckUpdate_Click" Content="检查更新" />
+                                        <ProgressRing
+                                            x:Name="CheckRing"
+                                            Width="20"
+                                            Height="20"
+                                            VerticalAlignment="Center"
+                                            Visibility="Collapsed" />
+                                    </StackPanel>
+                                    <TextBlock
+                                        x:Name="UpdateText"
+                                        FontSize="12"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        TextWrapping="Wrap" />
+                                </StackPanel>
                             </StackPanel>
                         </Border>
                     </StackPanel>

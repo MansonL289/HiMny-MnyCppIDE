@@ -389,12 +389,10 @@ require(['vs/editor/editor.main'], function () {
     'memcpy', 'sqrt', 'pow', 'fabs', 'cout', 'cin', 'cerr', 'clog', 'endl'
   ]);
 
-  // 可以出现在函数名之前的类型关键字
-  const CPP_DECL_TYPE_KEYWORDS = new Set([
-    'void', 'int', 'char', 'bool', 'float', 'double', 'long', 'short', 'unsigned',
-    'signed', 'auto', 'const', 'static', 'inline', 'virtual', 'explicit', 'extern',
-    'template', 'typename', 'class', 'struct', 'enum', 'union', 'friend', 'constexpr',
-    'volatile', 'register', 'wchar_t', 'mutable'
+  // 基础类型关键字：用类型色，避免所有关键字一个颜色
+  const CPP_TYPE_WORDS = new Set([
+    'void', 'bool', 'char', 'short', 'int', 'long', 'float', 'double', 'signed',
+    'unsigned', 'wchar_t', 'char8_t', 'char16_t', 'char32_t', 'auto', 'size_t'
   ]);
 
   const CPP_SYMBOL_INFO = new Map();
@@ -439,26 +437,131 @@ require(['vs/editor/editor.main'], function () {
     return null;
   }
 
-  function nextMeaningfulToken(flat, index) {
-    for (let i = index + 1; i < flat.length; i += 1) {
-      if (flat[i].word.trim()) { return flat[i]; }
+  // ---- 函数名识别（纯文本）开始 ----
+  // 把注释和字符串用空格覆盖掉，长度和换行保持不变，避免把里面的内容当代码
+  function maskCppNonCode(text) {
+    const out = text.split('');
+    const n = text.length;
+    let i = 0;
+    while (i < n) {
+      const ch = text[i];
+      const nxt = text[i + 1];
+      if (ch === '/' && nxt === '/') {
+        while (i < n && text[i] !== '\n') { out[i] = ' '; i += 1; }
+      } else if (ch === '/' && nxt === '*') {
+        out[i] = ' '; out[i + 1] = ' '; i += 2;
+        while (i < n && !(text[i] === '*' && text[i + 1] === '/')) {
+          if (text[i] !== '\n') { out[i] = ' '; }
+          i += 1;
+        }
+        if (i < n) { out[i] = ' '; out[i + 1] = ' '; i += 2; }
+      } else if (ch === '"' || ch === "'") {
+        const quote = ch;
+        out[i] = ' '; i += 1;
+        while (i < n) {
+          if (text[i] === '\\') {
+            out[i] = ' ';
+            if (i + 1 < n && text[i + 1] !== '\n') { out[i + 1] = ' '; }
+            i += 2;
+            continue;
+          }
+          if (text[i] === quote) { out[i] = ' '; i += 1; break; }
+          if (text[i] !== '\n') { out[i] = ' '; }
+          i += 1;
+        }
+      } else {
+        i += 1;
+      }
     }
-    return null;
+    return out.join('');
   }
 
-  // 前一个 token 是不是「类型」的位置，用来判断 name( 是声明还是调用
-  function isTypeLikeToken(prev) {
-    if (!prev) { return false; }
-    if (prev.type.indexOf('keyword') === 0) { return CPP_DECL_TYPE_KEYWORDS.has(prev.word); }
-    if (prev.type.indexOf('identifier') === 0) { return true; }
-    return prev.word === '*' || prev.word === '&' || prev.word === '&&' ||
-      prev.word === '>' || prev.word === '>>';
+  // 这些词出现在名字前面时只能说明是语句，不能当成「类型 名字(」
+  const CPP_NOT_TYPE_WORDS = new Set([
+    'return', 'if', 'else', 'while', 'for', 'switch', 'case', 'default', 'do',
+    'break', 'continue', 'goto', 'throw', 'new', 'delete', 'sizeof', 'catch',
+    'try', 'using', 'typedef', 'namespace', 'co_return', 'co_yield', 'co_await',
+    'static_assert', 'operator', 'and', 'or', 'not'
+  ]);
+
+  function offsetToPosition(lineStarts, offset) {
+    let low = 0;
+    let high = lineStarts.length - 1;
+    while (low < high) {
+      const mid = Math.floor((low + high + 1) / 2);
+      if (lineStarts[mid] <= offset) { low = mid; } else { high = mid - 1; }
+    }
+    return { line: low + 1, column: offset - lineStarts[low] + 1 };
   }
 
-  // 成员调用 obj.foo( / obj->foo( / 限定名 Foo::bar(
-  function isMemberAccess(prev) {
-    return !!prev && (prev.word === '.' || prev.word === '->' || prev.word === '::');
+  // 返回所有需要着色的文本区间：函数名 / 变量名
+  function collectTextSymbols(text) {
+    const masked = maskCppNonCode(text);
+    const ranges = [];
+    const seen = new Set();
+    function push(start, end, kind) {
+      if (seen.has(start)) { return; }
+      seen.add(start);
+      ranges.push({ start: start, end: end, kind: kind });
+    }
+
+    // 函数：类型 名字(
+    const funcNames = new Set();
+    const decl = /([A-Za-z_]\w*)[ \t]+([A-Za-z_]\w*)[ \t]*\(/g;
+    let m = decl.exec(masked);
+    while (m !== null) {
+      const typeWord = m[1];
+      const name = m[2];
+      if (!CPP_NOT_TYPE_WORDS.has(typeWord) && !CPP_NOT_TYPE_WORDS.has(name)) {
+        funcNames.add(name);
+        const start = m.index + m[0].lastIndexOf(name);
+        push(start, start + name.length, 'function');
+      }
+      m = decl.exec(masked);
+    }
+
+    // 调用：已声明过的函数，或者 obj.foo( / obj->foo( / Foo::bar(
+    const call = /([A-Za-z_]\w*)[ \t]*\(/g;
+    m = call.exec(masked);
+    while (m !== null) {
+      const name = m[1];
+      let hit = funcNames.has(name);
+      if (!hit) {
+        let k = m.index - 1;
+        while (k >= 0 && (masked[k] === ' ' || masked[k] === '\t')) { k -= 1; }
+        hit = k >= 0 && (masked[k] === '.' || masked[k] === ':');
+      }
+      if (hit) {
+        push(m.index, m.index + name.length, 'function');
+      }
+      m = call.exec(masked);
+    }
+
+    // 变量：类型 名字 后面紧跟 = ; , ) [ : {
+    const varNames = new Set();
+    const vdecl = /([A-Za-z_]\w*)[ \t]+([A-Za-z_]\w*)[ \t]*([=;,)\[:{])/g;
+    m = vdecl.exec(masked);
+    while (m !== null) {
+      const typeWord = m[1];
+      const name = m[2];
+      if (!CPP_NOT_TYPE_WORDS.has(typeWord) && !CPP_NOT_TYPE_WORDS.has(name) && !funcNames.has(name)) {
+        varNames.add(name);
+        const start = m.index + m[0].lastIndexOf(name);
+        push(start, start + name.length, 'variable');
+      }
+      m = vdecl.exec(masked);
+    }
+    varNames.forEach(function (name) {
+      const use = new RegExp('\\b' + name + '\\b', 'g');
+      let hit = use.exec(masked);
+      while (hit !== null) {
+        push(hit.index, hit.index + name.length, 'variable');
+        hit = use.exec(masked);
+      }
+    });
+    return ranges;
   }
+  // ---- 函数名识别（纯文本）结束 ----
 
   const MAX_SEM_CHARS = 1200000;
   const semDecorations = editor.createDecorationsCollection();
@@ -504,7 +607,8 @@ require(['vs/editor/editor.main'], function () {
     if (!model || !tab || tab.largeFile || model.getLanguageId() !== 'cpp') { return; }
     if (model.getValueLength() > MAX_SEM_CHARS) { return; }
 
-    const tokenized = monaco.editor.tokenize(model.getValue(), 'cpp');
+    const text = model.getValue();
+    const tokenized = monaco.editor.tokenize(text, 'cpp');
     if (!tokenized || tokenized.length === 0) { return; }
 
     // 语言包可能还没加载完，此时拿不到有效 token；稍后重试几次
@@ -542,21 +646,14 @@ require(['vs/editor/editor.main'], function () {
       }
     }
 
-    // 第一遍：只认「本文件里真实存在」的符号，避免把拼错的名字也当成函数着色
+    // 第一遍：收集本文件里声明的类型名（class/struct/enum/union/using 后面的名字）
     const userTypes = new Set();
-    const declaredFunctions = new Set();
     for (let i = 0; i < flat.length; i += 1) {
       const token = flat[i];
       if (token.type.indexOf('identifier') !== 0) { continue; }
       const prev = previousMeaningfulToken(flat, i);
       if (prev && /^keyword\.(class|struct|enum|union|using)\b/.test(prev.type)) {
         userTypes.add(token.word);
-        continue;
-      }
-      // 形如「类型 名字(」：函数声明或定义
-      const next = nextMeaningfulToken(flat, i);
-      if (next && next.word === '(' && isTypeLikeToken(prev)) {
-        declaredFunctions.add(token.word);
       }
     }
 
@@ -566,18 +663,24 @@ require(['vs/editor/editor.main'], function () {
 
     for (let i = 0; i < flat.length; i += 1) {
       const token = flat[i];
-      // 只处理普通标识符（跳过字符串里的内容、注释、预处理指令等）
-      if (token.type.indexOf('identifier') !== 0) { continue; }
+      // 处理标识符和关键字（跳过字符串、注释、预处理指令等）
+      const isIdentifier = token.type.indexOf('identifier') === 0;
+      const isKeyword = token.type.indexOf('keyword') === 0;
+      if (!isIdentifier && !isKeyword) { continue; }
       const word = token.word;
 
       let className = '';
       const lib = CPP_SYMBOL_INFO.get(word);
-      const next = nextMeaningfulToken(flat, i);
-      const prev = previousMeaningfulToken(flat, i);
 
-      if (CPP_EXTRA_KEYWORDS.has(word)) {
+      if (isKeyword) {
+        // 基础类型用类型色，其他关键字保持主题的紫色
+        if (CPP_TYPE_WORDS.has(word)) { className = 'mny-sem-type'; }
+      } else if (CPP_EXTRA_KEYWORDS.has(word)) {
         className = 'mny-sem-keyword';
       } else if (word === 'std') {
+        className = 'mny-sem-type';
+      } else if (userTypes.has(word)) {
+        // 本文件里声明的类型优先，避免和库里的同名符号冲突
         className = 'mny-sem-type';
       } else if (lib) {
         // 库符号必须 include 了对应头文件才着色
@@ -591,19 +694,32 @@ require(['vs/editor/editor.main'], function () {
             endLineNumber: token.line, endColumn: token.end + 1
           });
         }
-      } else if (userTypes.has(word)) {
-        className = 'mny-sem-type';
-      } else if (next && next.word === '(') {
-        // 只有本文件声明过的函数、成员调用、限定名调用才着色
-        if (declaredFunctions.has(word) || isMemberAccess(prev)) {
-          className = 'mny-sem-function';
-        }
       }
 
       if (!className) { continue; }
       decorations.push({
         range: new monaco.Range(token.line, token.start + 1, token.line, token.end + 1),
         options: { inlineClassName: className }
+      });
+    }
+
+    // 函数名和变量名用纯文本规则识别，和语法分词无关
+    const lineStarts = [0];
+    for (let i = 0; i < text.length; i += 1) {
+      if (text[i] === '\n') { lineStarts.push(i + 1); }
+    }
+    const seen = new Set();
+    const symbols = collectTextSymbols(text);
+    for (let i = 0; i < symbols.length; i += 1) {
+      const symbol = symbols[i];
+      const from = offsetToPosition(lineStarts, symbol.start);
+      const to = offsetToPosition(lineStarts, symbol.end);
+      const key = from.line + ':' + from.column;
+      if (seen.has(key)) { continue; }
+      seen.add(key);
+      decorations.push({
+        range: new monaco.Range(from.line, from.column, to.line, to.column),
+        options: { inlineClassName: symbol.kind === 'function' ? 'mny-sem-function' : 'mny-sem-variable' }
       });
     }
 
@@ -619,6 +735,36 @@ require(['vs/editor/editor.main'], function () {
   function post(message) {
     if (host) { host.postMessage(message); }
   }
+
+  /* ---------- 状态栏：光标行列 + 保存编码 ---------- */
+
+  const cursorPosEl = document.getElementById('cursorPos');
+  const encodingSelect = document.getElementById('encodingSelect');
+  const ENCODING_LABELS = { utf8: 'UTF-8', utf8bom: 'UTF-8 BOM', gbk: 'GBK' };
+  let saveEncoding = 'utf8';
+
+  function updateCursorPos() {
+    const pos = editor.getPosition();
+    if (!cursorPosEl || !pos) { return; }
+    cursorPosEl.textContent = '行 ' + pos.lineNumber + '，列 ' + pos.column;
+  }
+
+  function applyEncoding(value) {
+    if (!encodingSelect) { return; }
+    saveEncoding = ENCODING_LABELS[value] ? value : 'utf8';
+    encodingSelect.value = saveEncoding;
+  }
+
+  editor.onDidChangeCursorPosition(updateCursorPos);
+  editor.onDidChangeModel(updateCursorPos);
+  if (encodingSelect) {
+    encodingSelect.addEventListener('change', function () {
+      const value = encodingSelect.value;
+      applyEncoding(value);
+      post({ type: 'setEncoding', value: value });
+    });
+  }
+  updateCursorPos();
 
   /* ---------- 标签管理 ---------- */
 
@@ -670,6 +816,15 @@ require(['vs/editor/editor.main'], function () {
 
       tabsEl.appendChild(el);
     }
+
+    // 标签栏末尾的新建按钮，等同 Ctrl+N
+    const addEl = document.createElement('button');
+    addEl.type = 'button';
+    addEl.className = 'tab-add';
+    addEl.textContent = '＋';
+    addEl.title = '新建文件（Ctrl+N）';
+    addEl.addEventListener('click', function () { newUntitled(); });
+    tabsEl.appendChild(addEl);
   }
 
   /* ---------- 编辑器选项（由宿主设置驱动） ---------- */
@@ -799,6 +954,7 @@ require(['vs/editor/editor.main'], function () {
       if (!tab.dirty) {
         tab.dirty = true;
         renderTabs();
+        notifyTabs();
       }
     });
     tabs.push(tab);
@@ -809,7 +965,12 @@ require(['vs/editor/editor.main'], function () {
 
   function notifyTabs() {
     const tab = activeTab();
-    post({ type: 'tabsChanged', count: tabs.length, name: tab ? tab.name : null });
+    post({
+      type: 'tabsChanged',
+      count: tabs.length,
+      name: tab ? tab.name : null,
+      hasUnsaved: tabs.some(function (t) { return t.dirty; })
+    });
   }
 
   function newUntitled() {
@@ -1005,6 +1166,38 @@ require(['vs/editor/editor.main'], function () {
     notifyTabs();
   }
 
+  /* ---------- 批量保存（关闭窗口前保存所有脏标签） ---------- */
+
+  let saveAllQueue = null;
+
+  function saveAll() {
+    if (saveAllQueue !== null) { return; }
+    const dirty = tabs.filter(function (t) { return t.dirty; });
+    if (dirty.length === 0) {
+      post({ type: 'saveAllDone', cancelled: false });
+      return;
+    }
+    saveAllQueue = dirty;
+    processSaveAllNext();
+  }
+
+  function processSaveAllNext() {
+    while (saveAllQueue !== null && saveAllQueue.length > 0) {
+      const tab = saveAllQueue.shift();
+      if (!tab.dirty) { continue; }
+      post({
+        type: tab.path ? 'saveRequest' : 'saveAsRequest',
+        path: tab.path,
+        name: tab.name,
+        content: tab.model.getValue()
+      });
+      return;
+    }
+    const cancelled = tabs.some(function (t) { return t.dirty; });
+    saveAllQueue = null;
+    post({ type: 'saveAllDone', cancelled: cancelled });
+  }
+
   /* ---------- 保存 ---------- */
 
   function requestSave(saveAs) {
@@ -1029,6 +1222,12 @@ require(['vs/editor/editor.main'], function () {
     tab.dirty = false;
     renderTabs();
     notifyTabs();
+
+    // 批量保存中：继续保存下一个脏标签
+    if (saveAllQueue !== null) {
+      processSaveAllNext();
+      return;
+    }
 
     // 保存完成后继续之前被拦截的编译/运行请求
     if (pendingBuildKind) {
@@ -1135,6 +1334,7 @@ require(['vs/editor/editor.main'], function () {
       case 'build': requestBuild('compile'); break;
       case 'run': requestBuild('run'); break;
       case 'buildRun': requestBuild('buildRun'); break;
+      case 'saveAll': saveAll(); break;
     }
   }
 
@@ -1333,6 +1533,12 @@ require(['vs/editor/editor.main'], function () {
         case 'action': runAction(msg.id); break;
         case 'command': handleCommand(msg.name); break;
         case 'saved': markSaved(msg.path, msg.name); break;
+        case 'saveCancelled':
+          if (saveAllQueue !== null) {
+            saveAllQueue = null;
+            post({ type: 'saveAllDone', cancelled: true });
+          }
+          break;
         case 'terminalOutput': {
           const term = terminals.get(msg.id);
           if (term) { appendTerminalLine(term, msg.text); }
@@ -1357,6 +1563,7 @@ require(['vs/editor/editor.main'], function () {
 
   function applyHostSettings(msg) {
     if (typeof msg.theme === 'string') { settings.theme = msg.theme; }
+    if (typeof msg.saveEncoding === 'string') { applyEncoding(msg.saveEncoding); }
     if (typeof msg.fontFamily === 'string' && msg.fontFamily.length > 0) { settings.fontFamily = msg.fontFamily; }
     if (typeof msg.fontSize === 'number') { settings.fontSize = msg.fontSize; }
     if (typeof msg.fontLigatures === 'boolean') { settings.fontLigatures = msg.fontLigatures; }

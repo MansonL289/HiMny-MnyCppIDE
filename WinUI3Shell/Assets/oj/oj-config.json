@@ -1,0 +1,65 @@
+{
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0",
+  "ojs": [
+    {
+      "id": "luogu",
+      "name": "洛谷",
+      "color": "#0e90d2",
+      "homeUrl": "https://www.luogu.com.cn/",
+      "searchUrl": "https://www.luogu.com.cn/problem/list?keyword={q}&_contentOnly=1&type=P&page={page}",
+      "problemUrl": "https://www.luogu.com.cn/problem/{id}",
+      "loginUrl": "https://www.luogu.com.cn/auth/login",
+      "settleMs": 900,
+      "maxPages": 5,
+      "loginCookies": [],
+      "loginCheckScript": "(function(){return !!(document.querySelector('.user-nav')||document.querySelector('a[href^=\"/user/\"]'));})()",
+      "searchScript": "(function(){var tags=document.querySelectorAll('script[type=\"application/json\"]');for(var i=0;i<tags.length;i++){var t=tags[i].textContent||'';if(t.indexOf('\"problems\"')<0)continue;var j=null;try{j=JSON.parse(t);}catch(e){continue;}var r=j&&j.data&&j.data.problems&&j.data.problems.result;if(!r)continue;var d={0:'未评定',1:'入门',2:'普及-',3:'普及/提高-',4:'普及+/提高',5:'提高+/省选-',6:'省选/NOI-',7:'NOI/NOI+/CTSC'};var out=[];for(var k=0;k<r.length;k++){var p=r[k];var submit=p.totalSubmit||0;var pass=(typeof p.passRate==='number')?p.passRate:((p.totalAccepted&&p.totalSubmit)?p.totalAccepted/p.totalSubmit:-1);out.push({id:p.pid,title:p.name,url:'https://www.luogu.com.cn/problem/'+p.pid,meta:(d[p.difficulty]||''),submitCount:submit,passRate:pass,difficulty:p.difficulty});}return {items:out};}if(document.querySelector('img[src*=\"captcha\"],.captcha-img,[class*=\"captcha\"]')||/captcha|verification/i.test(document.title)){return {items:[],captcha:true};}return {items:[]};})()",
+      "problemScript": "(function(){var tags=document.querySelectorAll('script[type=\"application/json\"]');for(var i=0;i<tags.length;i++){var t=tags[i].textContent||'';if(t.indexOf('\"contenu\"')<0)continue;var j=null;try{j=JSON.parse(t);}catch(e){continue;}var p=j&&j.data&&j.data.problem;if(!p)continue;var c=p.contenu||{};var md='';function add(title,body){if(body&&body.trim()){md+='## '+title+'\\n\\n'+body.trim()+'\\n\\n';}}if(p.limits&&p.limits.time&&p.limits.time.length){md+='> 时间限制 '+p.limits.time[0]+' ms，内存限制 '+((p.limits.memory&&p.limits.memory[0])||'')+' MB\\n\\n';}add('题目背景',c.background);add('题目描述',c.description);add('输入格式',c.formatI);add('输出格式',c.formatO);add('提示',c.hint);var samples=[];var ss=p.samples||[];for(var k=0;k<ss.length;k++){samples.push({input:ss[k][0]||'',output:ss[k][1]||''});}return {title:p.name,markdown:md,samples:samples,loggedIn:!!(j.currentUser&&j.currentUser.uid)};}return {title:document.title,markdown:'',samples:[]};})()"
+    },
+    {
+      "id": "codeforces",
+      "name": "Codeforces",
+      "color": "#1f8acb",
+      "homeUrl": "https://codeforces.com/",
+      "searchUrl": "https://codeforces.com/api/problemset.problems?q={q}",
+      "problemUrl": "",
+      "loginUrl": "https://codeforces.com/enter",
+      "settleMs": 1200,
+      "loginCookies": [ "X-User-Sha1" ],
+      "loginCheckScript": "(function(){return !!document.querySelector('.lang-chooser a[href^=\"/profile/\"]');})()",
+      "searchScript": "(function(){var q=(new URL(location.href).searchParams.get('q')||'').toLowerCase();var pre=document.querySelector('pre');var txt=pre?pre.innerText:document.body.innerText;var data=null;try{data=JSON.parse(txt);}catch(e){return {items:[],error:'Codeforces 数据解析失败'};}var arr=(data.result&&data.result.problems)||[];var stats=(data.result&&data.result.problemStatistics)||[];var stMap={};for(var s=0;s<stats.length;s++){var st=stats[s];stMap[st.contestId+'/'+st.index]=st.solvedCount||0;}var out=[];for(var i=0;i<arr.length&&out.length<150;i++){var p=arr[i];var pid=String(p.contestId||'')+String(p.index||'');var hit=!q||p.name.toLowerCase().indexOf(q)>=0||pid.toLowerCase().indexOf(q)>=0;if(!hit)continue;var solved=stMap[p.contestId+'/'+p.index]||0;out.push({id:pid,title:p.name,url:'https://codeforces.com/problemset/problem/'+p.contestId+'/'+p.index,meta:(p.rating?('rating '+p.rating):'')+' · '+(p.tags||[]).slice(0,2).join(','),submitCount:solved,difficulty:p.rating||-1});}return {items:out};})()",
+      "problemScript": "(function(){var st=document.querySelector('.problem-statement');if(!st)return {title:(document.title||'').replace(/\\s*-\\s*Codeforces.*$/,''),markdown:'',samples:[],error:'Codeforces 页面被拦截或未加载'};var tEl=st.querySelector('.header .title')||st.querySelector('.title');var title=tEl?tEl.innerText.trim():document.title;var md=__mny.htmlToMd(st);var samples=[];var tests=document.querySelectorAll('.sample-test');for(var i=0;i<tests.length;i++){var ins=tests[i].querySelectorAll('.input pre');var outs=tests[i].querySelectorAll('.output pre');for(var k=0;k<ins.length;k++){samples.push({input:ins[k].innerText,output:outs[k]?outs[k].innerText:''});}}return {title:title,markdown:md,samples:samples};})()"
+    },
+    {
+      "id": "atcoder",
+      "name": "AtCoder",
+      "color": "#5c5c5c",
+      "homeUrl": "https://atcoder.jp/",
+      "searchUrl": "https://kenkoooo.com/atcoder/resources/merged-problems.json?q={q}",
+      "problemUrl": "",
+      "loginUrl": "https://atcoder.jp/login",
+      "settleMs": 900,
+      "loginCookies": [],
+      "loginCheckScript": "(function(){return !!document.querySelector('a[href=\"/logout\"]');})()",
+      "searchScript": "(function(){var q=(new URL(location.href).searchParams.get('q')||'').toLowerCase();var pre=document.querySelector('pre');var txt=pre?pre.innerText:document.body.innerText;var data=null;try{data=JSON.parse(txt);}catch(e){return {items:[],error:'AtCoder 数据解析失败'};}var out=[];for(var i=0;i<data.length&&out.length<150;i++){var p=data[i];var hit=!q||p.title.toLowerCase().indexOf(q)>=0||p.id.indexOf(q)>=0;if(!hit)continue;var solved=p.solver_count||0;out.push({id:p.id,title:p.title,url:'https://atcoder.jp/contests/'+p.contest_id+'/tasks/'+p.id,meta:p.contest_id,submitCount:solved,difficulty:p.difficulty||-1});}return {items:out};})()",
+      "problemScript": "(function(){var span=document.querySelector('#task-statement span.lang-en')||document.querySelector('#task-statement span.lang-ja')||document.querySelector('#task-statement');if(!span)return {title:document.title,markdown:'',samples:[],error:'未找到题面'};var samples=[];var pend=null;var secs=span.querySelectorAll('section');for(var i=0;i<secs.length;i++){var h3=secs[i].querySelector('h3');var pre=secs[i].querySelector('pre');if(!h3||!pre)continue;var t=h3.innerText.trim();if(/^(Sample Input|入力例)/i.test(t)){pend={input:pre.innerText,output:''};samples.push(pend);}else if(/^(Sample Output|出力例)/i.test(t)&&pend){pend.output=pre.innerText;}}var title=(document.title||'').replace(/\\s*-\\s*AtCoder\\s*$/,'').trim();var md=__mny.htmlToMd(span);return {title:title,markdown:md,samples:samples};})()"
+    },
+    {
+      "id": "nowcoder",
+      "name": "牛客",
+      "color": "#ff6b35",
+      "homeUrl": "https://www.nowcoder.com/",
+      "searchUrl": "https://www.nowcoder.com/search?query={q}&type=question",
+      "problemUrl": "",
+      "loginUrl": "https://www.nowcoder.com/login",
+      "settleMs": 800,
+      "problemSettleMs": 3200,
+      "disableJs": true,
+      "retryEmpty": true,
+      "loginCookies": [],
+      "loginCheckScript": "(function(){return location.pathname.indexOf('\\/login')<0&&!document.querySelector('input[type=password]');})()",
+      "searchScript": "(function(){var out=[];var seen={};function walk(o,d){if(!o||d>12)return;if(Object.prototype.toString.call(o)==='[object Array]'){for(var i=0;i<o.length;i++)walk(o[i],d+1);return;}if(typeof o!=='object')return;var u=o.jumpUrl;if(typeof u==='string'&&u.indexOf('/practice/')===0&&o.title){var url='https://www.nowcoder.com'+u;if(!seen[url]){seen[url]=1;out.push({id:o.questionNo||o.uuid||String(o.id||''),title:o.title,url:url,meta:(o.questionNo?o.questionNo+' · ':'')+'编程题'});}}for(var k in o){if(k==='jumpUrl')continue;var v=o[k];if(v&&typeof v==='object')walk(v,d+1);}}function extract(t){var s=t.indexOf('__INITIAL_STATE__');if(s<0)return null;var a=t.indexOf('{',s);if(a<0)return null;var dp=0,q=false,esc=false;for(var i=a;i<t.length;i++){var c=t.charCodeAt(i);if(q){if(esc){esc=false;}else if(c===92){esc=true;}else if(c===34){q=false;}continue;}if(c===34){q=true;continue;}if(c===123){dp++;}else if(c===125){dp--;if(dp===0){try{return JSON.parse(t.substring(a,i+1));}catch(e){return null;}}}}return null;}var tags=document.querySelectorAll('script');var found=0;for(var i=0;i<tags.length;i++){var txt=tags[i].textContent||'';if(txt.indexOf('__INITIAL_STATE__')<0)continue;found++;var s2=extract(txt);if(s2)walk(s2,0);}return {items:out,note:'首屏数据缺失 len='+document.documentElement.outerHTML.length};})()",
+      "problemScript": "(function(){var root=document.querySelector('.ta-question.question-module')||document.body;var tEl=root.querySelector('.question-title');var title=tEl?tEl.innerText.replace(/\\s+/g,' ').trim():document.title.split('_')[0];title=title.replace(/^NC\\d+\\s*/,'');var md='';var samples=[];var boxes=root.querySelectorAll('.section-box');for(var i=0;i<boxes.length;i++){var b=boxes[i];var h=b.querySelector('.section-title');var name=h?h.innerText.trim():'';if(/示例|样例/.test(name)){var pres=b.querySelectorAll('pre');for(var p=0;p+1<pres.length;p+=2)samples.push({input:pres[p].innerText,output:pres[p+1].innerText});continue;}var body=__mny.htmlToMd(b);if(body)md+=body+'\\n\\n';}if(samples.length===0){var ois=root.querySelectorAll('.question-oi');for(var j=0;j<ois.length;j++){var s={input:'',output:'',note:''};var mods=ois[j].querySelectorAll('.question-oi-mod');for(var k=0;k<mods.length;k++){var hh=mods[k].querySelector('h2');var pre=mods[k].querySelector('pre');var key=hh?hh.innerText.trim():'';var val=pre?pre.innerText:'';if(key==='输入')s.input=val;else if(key==='输出')s.output=val;else s.note=(s.note?s.note+'\\n':'')+val;}samples.push(s);}}return {title:title,markdown:md,samples:samples,debug:'sec='+boxes.length+',pre='+root.querySelectorAll('pre').length};})()"
+    }
+  ]
+}

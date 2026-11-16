@@ -10,3 +10,4 @@ def main() -> None:
     os.system(f'start "" "{EXE_PATH}"')
 if __name__ == "__main__":
     main()
+

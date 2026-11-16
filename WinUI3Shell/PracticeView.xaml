@@ -1,0 +1,669 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="WinUI3Shell.PracticeView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:oj="using:WinUI3Shell.Oj">
+
+    <UserControl.Resources>
+        <!-- OJ 筛选：只有图标，选中/未选中靠不透明度区分，不用彩色胶囊 -->
+        <Style x:Key="OjIconToggleStyle" TargetType="ToggleButton">
+            <Setter Property="Width" Value="44" />
+            <Setter Property="Height" Value="44" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Grid x:Name="OjIconRoot" Background="Transparent" Opacity="0.3">
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup x:Name="CommonStates">
+                                    <VisualState x:Name="Normal" />
+                                    <VisualState x:Name="PointerOver">
+                                        <VisualState.Setters>
+                                            <Setter Target="OjIconRoot.Opacity" Value="0.6" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Pressed">
+                                        <VisualState.Setters>
+                                            <Setter Target="OjIconRoot.Opacity" Value="0.8" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Disabled">
+                                        <VisualState.Setters>
+                                            <Setter Target="OjIconRoot.Opacity" Value="0.12" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Checked">
+                                        <VisualState.Setters>
+                                            <Setter Target="OjIconRoot.Opacity" Value="1" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="CheckedPointerOver">
+                                        <VisualState.Setters>
+                                            <Setter Target="OjIconRoot.Opacity" Value="0.75" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="CheckedPressed">
+                                        <VisualState.Setters>
+                                            <Setter Target="OjIconRoot.Opacity" Value="0.6" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="CheckedDisabled">
+                                        <VisualState.Setters>
+                                            <Setter Target="OjIconRoot.Opacity" Value="0.4" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                            <ContentPresenter
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Content="{TemplateBinding Content}"
+                                ContentTemplate="{TemplateBinding ContentTemplate}" />
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <DataTemplate x:Key="ProblemItemTemplate" x:DataType="oj:OjProblemItem">
+            <Grid ColumnSpacing="10" Padding="2,4" AutomationProperties.Name="{x:Bind DisplayName}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Image
+                    Grid.Column="0"
+                    Width="20"
+                    Height="20"
+                    VerticalAlignment="Center"
+                    Opacity="0.9"
+                    Source="{x:Bind Icon, Mode=OneWay}" />
+                <StackPanel Grid.Column="1" Spacing="1">
+                    <TextBlock
+                        Text="{x:Bind Title}"
+                        TextTrimming="CharacterEllipsis"
+                        MaxLines="1"
+                        FontSize="13" />
+                    <TextBlock
+                        Text="{x:Bind Meta}"
+                        TextTrimming="CharacterEllipsis"
+                        MaxLines="1"
+                        FontSize="11"
+                        Opacity="0.6" />
+                </StackPanel>
+                <Button
+                    Grid.Column="2"
+                    Width="28"
+                    Height="28"
+                    Padding="0"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    CornerRadius="6"
+                    Click="StarResult_Click"
+                    Tag="{x:Bind Key}"
+                    ToolTipService.ToolTip="标星">
+                    <FontIcon
+                        Glyph="{x:Bind StarGlyph, Mode=OneWay}"
+                        FontSize="14"
+                        Foreground="{x:Bind StarForeground, Mode=OneWay}" />
+                </Button>
+                <TextBlock
+                    Grid.Column="3"
+                    VerticalAlignment="Center"
+                    Text="{x:Bind Id}"
+                    FontSize="11"
+                    Opacity="0.5" />
+            </Grid>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid x:Name="PracticeRoot" Background="Transparent">
+        <!-- 首页：大标题 + 搜索框 + OJ 图标筛选 -->
+        <Grid x:Name="HomePanel" Padding="0,0,0,40" AutomationProperties.AutomationId="PracticeHomePanel">
+            <Button
+                x:Name="HomeStarButton"
+                Width="40"
+                Height="40"
+                Padding="0"
+                Margin="0,24,28,0"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Background="Transparent"
+                BorderThickness="0"
+                CornerRadius="10"
+                Click="HomeStarButton_Click"
+                ToolTipService.ToolTip="标星题目">
+                <FontIcon Glyph="&#xE734;" FontSize="18" Opacity="0.7" />
+            </Button>
+            <StackPanel
+                x:Name="HomeStack"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Spacing="18">
+                <StackPanel.RenderTransform>
+                    <TranslateTransform x:Name="HomeStackTransform" />
+                </StackPanel.RenderTransform>
+                <TextBlock
+                    Text="刷题模式"
+                    FontSize="46"
+                    FontWeight="SemiBold"
+                    HorizontalAlignment="Center" />
+                <TextBox
+                    x:Name="SearchBox"
+                    Width="440"
+                    PlaceholderText="搜索题目"
+                    FontSize="15"
+                    Height="46"
+                    Padding="16,13,16,13"
+                    CornerRadius="12"
+                    HorizontalAlignment="Center"
+                    KeyDown="SearchBox_KeyDown"
+                    AutomationProperties.AutomationId="PracticeSearchBox" />
+                <StackPanel
+                    Orientation="Horizontal"
+                    Spacing="6"
+                    HorizontalAlignment="Center"
+                    Margin="0,2,0,0">
+                    <ToggleButton
+                        x:Name="LuoguToggle"
+                        Tag="luogu"
+                        IsChecked="True"
+                        Style="{StaticResource OjIconToggleStyle}"
+                        ToolTipService.ToolTip="洛谷"
+                        Click="OjToggle_Click">
+                        <Image x:Name="LuoguIcon" Width="28" Height="28" />
+                    </ToggleButton>
+                    <ToggleButton
+                        x:Name="CodeforcesToggle"
+                        Tag="codeforces"
+                        IsChecked="True"
+                        Style="{StaticResource OjIconToggleStyle}"
+                        ToolTipService.ToolTip="Codeforces"
+                        Click="OjToggle_Click">
+                        <Image x:Name="CodeforcesIcon" Width="28" Height="28" />
+                    </ToggleButton>
+                    <ToggleButton
+                        x:Name="AtCoderToggle"
+                        Tag="atcoder"
+                        IsChecked="True"
+                        Style="{StaticResource OjIconToggleStyle}"
+                        ToolTipService.ToolTip="AtCoder"
+                        Click="OjToggle_Click">
+                        <Image x:Name="AtCoderIcon" Width="28" Height="28" />
+                    </ToggleButton>
+                    <ToggleButton
+                        x:Name="NowCoderToggle"
+                        Tag="nowcoder"
+                        IsChecked="True"
+                        Style="{StaticResource OjIconToggleStyle}"
+                        ToolTipService.ToolTip="牛客"
+                        Click="OjToggle_Click">
+                        <Image x:Name="NowCoderIcon" Width="28" Height="28" />
+                    </ToggleButton>
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+
+        <!-- 搜索结果 -->
+        <Grid x:Name="ResultsPanel" Visibility="Collapsed" AutomationProperties.AutomationId="PracticeResultsPanel">
+            <Grid.RenderTransform>
+                <TranslateTransform x:Name="ResultsTransform" />
+            </Grid.RenderTransform>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Grid
+                Grid.Row="0"
+                ColumnSpacing="10"
+                Padding="24,14,24,10"
+                MaxWidth="720"
+                HorizontalAlignment="Center">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Button
+                    Grid.Column="0"
+                    Width="32"
+                    Height="32"
+                    Padding="0"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    CornerRadius="8"
+                    Click="BackToHome_Click"
+                    ToolTipService.ToolTip="返回搜索">
+                    <FontIcon Glyph="&#xE72B;" FontSize="15" />
+                </Button>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                    <TextBlock x:Name="ResultQueryText" FontSize="15" FontWeight="SemiBold" />
+                    <TextBlock x:Name="ResultStatusText" FontSize="11" Opacity="0.55" Text="正在搜索…" />
+                </StackPanel>
+                <ComboBox
+                    x:Name="SortComboBox"
+                    Grid.Column="2"
+                    Height="32"
+                    MinWidth="130"
+                    Padding="10,0"
+                    CornerRadius="8"
+                    FontSize="12"
+                    SelectionChanged="SortComboBox_SelectionChanged"
+                    AutomationProperties.AutomationId="PracticeSortComboBox">
+                    <ComboBoxItem Content="提交量升序" Tag="SubmitAsc" IsSelected="True" />
+                    <ComboBoxItem Content="提交量降序" Tag="SubmitDesc" />
+                    <ComboBoxItem Content="通过率升序" Tag="PassRateAsc" />
+                    <ComboBoxItem Content="通过率降序" Tag="PassRateDesc" />
+                    <ComboBoxItem Content="难度升序" Tag="DifficultyAsc" />
+                    <ComboBoxItem Content="难度降序" Tag="DifficultyDesc" />
+                    <ComboBoxItem Content="标题字母" Tag="TitleAsc" />
+                </ComboBox>
+            </Grid>
+            <ListView
+                x:Name="ResultList"
+                Grid.Row="1"
+                Width="720"
+                MaxWidth="720"
+                HorizontalAlignment="Center"
+                Margin="0,0,0,20"
+                IsItemClickEnabled="True"
+                ItemClick="ResultList_ItemClick"
+                SelectionMode="None"
+                ItemTemplate="{StaticResource ProblemItemTemplate}"
+                CornerRadius="10"
+                AutomationProperties.AutomationId="PracticeResultList" />
+            <TextBlock
+                x:Name="EmptyStateText"
+                Grid.Row="1"
+                Margin="0,80,0,0"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Top"
+                FontSize="13"
+                Opacity="0.55"
+                TextWrapping="Wrap"
+                TextAlignment="Center"
+                Visibility="Collapsed" />
+        </Grid>
+
+        <!-- 标星题目列表 -->
+        <Grid x:Name="StarredPanel" Visibility="Collapsed" AutomationProperties.AutomationId="PracticeStarredPanel">
+            <Grid.RenderTransform>
+                <TranslateTransform x:Name="StarredTransform" />
+            </Grid.RenderTransform>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Grid Grid.Row="0" ColumnSpacing="10" Padding="24,14,24,10" MaxWidth="720" HorizontalAlignment="Center">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Button
+                    Grid.Column="0"
+                    Width="32"
+                    Height="32"
+                    Padding="0"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    CornerRadius="8"
+                    Click="StarredBack_Click"
+                    ToolTipService.ToolTip="返回">
+                    <FontIcon Glyph="&#xE72B;" FontSize="15" />
+                </Button>
+                <TextBlock
+                    Grid.Column="1"
+                    Text="标星题目"
+                    FontSize="15"
+                    FontWeight="SemiBold"
+                    VerticalAlignment="Center" />
+            </Grid>
+            <ListView
+                x:Name="StarredList"
+                Grid.Row="1"
+                Width="720"
+                MaxWidth="720"
+                HorizontalAlignment="Center"
+                Margin="0,0,0,20"
+                IsItemClickEnabled="True"
+                ItemClick="StarredList_ItemClick"
+                SelectionMode="None"
+                ItemTemplate="{StaticResource ProblemItemTemplate}"
+                CornerRadius="10" />
+        </Grid>
+
+        <!-- 题目详情 -->
+        <Grid x:Name="ProblemPanel" Visibility="Collapsed" AutomationProperties.AutomationId="PracticeProblemPanel">
+            <Grid.RenderTransform>
+                <TranslateTransform x:Name="ProblemTransform" />
+            </Grid.RenderTransform>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <Grid ColumnSpacing="10" Padding="20,12,20,10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Button
+                    Grid.Column="0"
+                    Width="32"
+                    Height="32"
+                    Padding="0"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    CornerRadius="8"
+                    Click="BackToResults_Click"
+                    ToolTipService.ToolTip="返回搜索结果">
+                    <FontIcon Glyph="&#xE72B;" FontSize="15" />
+                </Button>
+                <StackPanel
+                    Grid.Column="1"
+                    Orientation="Horizontal"
+                    Spacing="6"
+                    VerticalAlignment="Center">
+                    <Image x:Name="ProblemOjIcon" Width="18" Height="18" Opacity="0.85" />
+                    <TextBlock x:Name="ProblemOjText" FontSize="11" Opacity="0.7" VerticalAlignment="Center" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" Spacing="0" VerticalAlignment="Center">
+                    <TextBlock
+                        x:Name="ProblemTitleText"
+                        FontSize="15"
+                        FontWeight="SemiBold"
+                        TextTrimming="CharacterEllipsis"
+                        MaxLines="1" />
+                    <TextBlock
+                        x:Name="ProblemStatusText"
+                        FontSize="11"
+                        Opacity="0.55"
+                        Text="正在抓取题面…"
+                        TextTrimming="CharacterEllipsis"
+                        MaxLines="1" />
+                </StackPanel>
+                <Button
+                    x:Name="LoginButton"
+                    Grid.Column="3"
+                    Height="30"
+                    Padding="12,0"
+                    CornerRadius="8"
+                    FontSize="12"
+                    Content="登录"
+                    Click="LoginButton_Click" />
+                <Button
+                    Grid.Column="4"
+                    Height="30"
+                    Padding="12,0"
+                    CornerRadius="8"
+                    FontSize="12"
+                    Content="打开原题"
+                    Click="OpenOriginal_Click" />
+            </Grid>
+
+            <Grid Grid.Row="1" Margin="16,0,16,16" ColumnSpacing="10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- 左：题面（Markdown + LaTeX） -->
+                <Border
+                    Grid.Column="0"
+                    Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
+                    BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="12">
+                    <WebView2 x:Name="ProblemWebView" />
+                </Border>
+
+                <!-- 右：草稿编辑器 + 操作 -->
+                <Grid Grid.Column="1" RowSpacing="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox
+                            x:Name="LanguageCombo"
+                            Grid.Column="0"
+                            Height="30"
+                            MinWidth="120"
+                            FontSize="12"
+                            CornerRadius="8"
+                            SelectionChanged="LanguageCombo_SelectionChanged">
+                            <ComboBoxItem Content="C++17" Tag="cpp" IsSelected="True" />
+                        </ComboBox>
+                    </Grid>
+
+                    <Border
+                        Grid.Row="1"
+                        Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
+                        BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="12">
+                        <WebView2 x:Name="PracticeEditorWebView" />
+                    </Border>
+
+                    <!-- 底部操作栏 -->
+                    <StackPanel
+                        Grid.Row="2"
+                        Orientation="Horizontal"
+                        Spacing="8"
+                        HorizontalAlignment="Right">
+                        <Button
+                            Height="32"
+                            Padding="16,0"
+                            CornerRadius="8"
+                            FontSize="12"
+                            Content="重置草稿"
+                            Click="ResetDraft_Click" />
+                        <Button
+                            Height="32"
+                            Padding="16,0"
+                            CornerRadius="8"
+                            FontSize="12"
+                            Content="提交"
+                            Click="Submit_Click"
+                            AutomationProperties.AutomationId="PracticeSubmitButton" />
+                        <Button
+                            Height="32"
+                            Padding="16,0"
+                            CornerRadius="8"
+                            FontSize="12"
+                            Content="测试"
+                            Style="{StaticResource AccentButtonStyle}"
+                            Click="TestSample_Click"
+                            AutomationProperties.AutomationId="PracticeTestButton" />
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Grid>
+
+        <!-- 登录浮层：圆角 WebView2 -->
+        <Grid
+            x:Name="LoginOverlay"
+            Background="#99000000"
+            Visibility="Collapsed"
+            AutomationProperties.AutomationId="PracticeLoginOverlay">
+            <Border
+                x:Name="LoginBorder"
+                Margin="40"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
+                BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="12">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid Grid.Row="0" Padding="16,10" ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Spacing="1">
+                            <TextBlock x:Name="LoginTitleText" Text="登录" FontSize="14" FontWeight="SemiBold" />
+                            <TextBlock
+                                x:Name="LoginHintText"
+                                Text=""
+                                FontSize="11"
+                                Opacity="0.55" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                            <ProgressRing x:Name="LoginRing" Width="16" Height="16" IsActive="True" />
+                            <Button
+                                Width="30"
+                                Height="30"
+                                Padding="0"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                CornerRadius="8"
+                                Click="CloseLogin_Click"
+                                ToolTipService.ToolTip="关闭"
+                                AutomationProperties.AutomationId="PracticeLoginCloseButton">
+                                <FontIcon Glyph="&#xE711;" FontSize="12" />
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+                    <Border
+                        Grid.Row="1"
+                        BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                        BorderThickness="0,1,0,0"
+                        CornerRadius="0,0,12,12"
+                        Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
+                        <!-- 底部留出圆角背景：WebView2 的原生画面不会被父级圆角裁切 -->
+                        <WebView2 x:Name="LoginWebView" Margin="0,0,0,10" />
+                    </Border>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- 验证码浮层：把触发了验证码的页面交给用户手动完成 -->
+        <Grid
+            x:Name="CaptchaOverlay"
+            Background="#99000000"
+            Visibility="Collapsed"
+            AutomationProperties.AutomationId="PracticeCaptchaOverlay">
+            <Border
+                Width="900"
+                Height="640"
+                MaxWidth="1000"
+                MaxHeight="720"
+                Margin="40"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
+                BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="12">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid Grid.Row="0" Padding="16,10" ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Spacing="1">
+                            <TextBlock Text="需要验证" FontSize="14" FontWeight="SemiBold" />
+                            <TextBlock
+                                Text="洛谷要求人机验证，请在下方完成后点击「我已完成」，搜索会自动继续。"
+                                FontSize="11"
+                                Opacity="0.55" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                            <Button
+                                Content="我已完成"
+                                Height="30"
+                                Padding="12,0"
+                                CornerRadius="8"
+                                Style="{StaticResource AccentButtonStyle}"
+                                Click="CaptchaDone_Click"
+                                AutomationProperties.AutomationId="PracticeCaptchaDoneButton" />
+                            <Button
+                                Width="30"
+                                Height="30"
+                                Padding="0"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                CornerRadius="8"
+                                Click="CaptchaCancel_Click"
+                                ToolTipService.ToolTip="跳过">
+                                <FontIcon Glyph="&#xE711;" FontSize="12" />
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+                    <Border
+                        Grid.Row="1"
+                        BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                        BorderThickness="0,1,0,0"
+                        CornerRadius="0,0,12,12">
+                        <WebView2 x:Name="CaptchaWebView" Margin="0,0,0,10" />
+                    </Border>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- 搜索加载浮层：微软商店风格，居中的大进度环 -->
+        <Grid x:Name="SearchLoadingOverlay" Visibility="Collapsed" Background="Transparent">
+            <StackPanel
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Spacing="16">
+                <ProgressRing
+                    x:Name="SearchLoadingRing"
+                    Width="56"
+                    Height="56"
+                    IsActive="True"
+                    Foreground="{ThemeResource AccentFillColorDefaultBrush}" />
+                <TextBlock
+                    x:Name="SearchLoadingText"
+                    FontSize="13"
+                    Opacity="0.7"
+                    HorizontalAlignment="Center"
+                    Text="正在搜索…" />
+                <Button
+                    Content="取消"
+                    Height="30"
+                    Padding="16,0"
+                    CornerRadius="8"
+                    FontSize="12"
+                    HorizontalAlignment="Center"
+                    Click="CancelSearch_Click" />
+            </StackPanel>
+        </Grid>
+
+        <!-- 后台抓取用的隐藏浏览器：桌面尺寸但挪到可视区外，保证站点按 PC 端布局渲染
+             （2px 视口会让部分站点切到移动端布局，抓不到想要的节点） -->
+        <Grid
+            Width="1280"
+            Height="800"
+            Margin="-4000,-4000,0,0"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Top"
+            IsHitTestVisible="False">
+            <WebView2 x:Name="FetchWebView" />
+        </Grid>
+    </Grid>
+</UserControl>

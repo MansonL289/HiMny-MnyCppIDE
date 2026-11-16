@@ -112,6 +112,12 @@ public sealed class AppSettings
     /// <summary>在连接器命令行加入以下命令（留空表示不加）。</summary>
     public string LinkerFlags { get; set; } = string.Empty;
 
+    /// <summary>是否启用“编译时加入的命令”。</summary>
+    public bool EnableCompilerFlags { get; set; }
+
+    /// <summary>是否启用“连接器命令行加入的命令”。</summary>
+    public bool EnableLinkerFlags { get; set; } = true;
+
     /// <summary>C++ 语言标准：c++11 / c++14 / c++17 / c++20 / default（不指定）。</summary>
     public string CppStandard { get; set; } = "c++17";
 
@@ -223,8 +229,16 @@ public sealed class AppSettings
             parts.Add(warning);
         }
 
-        parts.AddRange(SplitFlags(CompilerFlags));
-        parts.AddRange(SplitFlags(LinkerFlags));
+        if (EnableCompilerFlags)
+        {
+            parts.AddRange(SplitFlags(CompilerFlags));
+        }
+
+        if (EnableLinkerFlags)
+        {
+            parts.AddRange(SplitFlags(LinkerFlags));
+        }
+
         return string.Join(' ', parts);
     }
 

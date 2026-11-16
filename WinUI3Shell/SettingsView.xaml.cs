@@ -109,6 +109,11 @@ public sealed partial class SettingsView : UserControl
         CompilerFlagsBox.Text = settings.CompilerFlags;
         LinkerFlagsBox.Text = settings.LinkerFlags;
 
+        CompilerFlagsSwitch.IsOn = settings.EnableCompilerFlags;
+        LinkerFlagsSwitch.IsOn = settings.EnableLinkerFlags;
+        CompilerFlagsBox.IsEnabled = settings.EnableCompilerFlags;
+        LinkerFlagsBox.IsEnabled = settings.EnableLinkerFlags;
+
         InsertTemplateSwitch.IsOn = settings.InsertTemplateOnNewFile;
         SetTemplateEditorEnabled(settings.InsertTemplateOnNewFile);
 
@@ -294,7 +299,7 @@ public sealed partial class SettingsView : UserControl
 
     /* ---------------- 关于 ---------------- */
 
-    private const string CurrentVersion = "Beta_1.0.20261113";
+    private const string CurrentVersion = "Beta_1.1.20261116";
     private const string TagsApi = "https://api.github.com/repos/MansonL289/HiMny-MnyCppIDE/tags";
 
     private static readonly HttpClient Http = CreateHttp();
@@ -680,6 +685,30 @@ public sealed partial class SettingsView : UserControl
         RaiseChanged();
     }
 
+    private void CompilerFlagsSwitch_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _settings.EnableCompilerFlags = CompilerFlagsSwitch.IsOn;
+        CompilerFlagsBox.IsEnabled = CompilerFlagsSwitch.IsOn;
+        RaiseChanged();
+    }
+
+    private void LinkerFlagsSwitch_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _settings.EnableLinkerFlags = LinkerFlagsSwitch.IsOn;
+        LinkerFlagsBox.IsEnabled = LinkerFlagsSwitch.IsOn;
+        RaiseChanged();
+    }
+
     /* ---------------- 新文件模板 ---------------- */
 
     private void InsertTemplateSwitch_Toggled(object sender, RoutedEventArgs e)
@@ -793,7 +822,8 @@ public sealed partial class SettingsView : UserControl
             type = "appearance",
             theme = _settings.EditorTheme,
             fontFamily = _settings.EditorFontFamily,
-            fontSize = _settings.EditorFontSize,
+            // 预览区高度只有 240，字号过大会把代码撑出可视区域，这里限高只影响预览
+            fontSize = Math.Clamp(_settings.EditorFontSize, 10, 18),
         });
         TemplateWebView.CoreWebView2.PostWebMessageAsJson(json);
     }

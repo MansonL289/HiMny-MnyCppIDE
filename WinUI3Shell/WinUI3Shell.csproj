@@ -26,6 +26,8 @@
   <ItemGroup>
     <Content Include="Assets\AppIcon.ico" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\monaco\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\practice\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\oj\**\*" CopyToOutputDirectory="PreserveNewest" />
     <!-- 内置 MinGW-w64 工具链：不作为 PRI 资源，只原样复制到输出目录，随应用分发 -->
     <None Include="Tools\mingw64\**\*"
           Link="Assets\mingw64\%(RecursiveDir)%(Filename)%(Extension)"

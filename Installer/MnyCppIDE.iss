@@ -5,7 +5,7 @@
 ;   robocopy "WinUI3Shell\bin\x64\Release\net8.0-windows10.0.19041.0\win-x64\publish" "d:\0Mny\Tools\pub-cpp" /MIR
 
 #define AppName "MnyC++ IDE"
-#define AppVersion "Beta_1.0.20261113"
+#define AppVersion "Beta_1.1.20261116"
 #define AppPublisher "MNY"
 #define AppURL "https://github.com/MansonL289/HiMny-MnyCppIDE"
 #define AppExeName "MnyMinecraftLauncher.exe"
