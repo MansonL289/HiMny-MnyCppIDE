@@ -68,6 +68,7 @@
     padding: 1px 5px;
   }
   #content pre {
+    position: relative;
     background: var(--code-bg);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -75,6 +76,22 @@
     overflow-x: auto;
     margin: 10px 0;
   }
+  .code-copy-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    font-size: 11px;
+    font-family: inherit;
+    padding: 2px 9px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--code-bg);
+    color: var(--text);
+    opacity: 0.65;
+    cursor: pointer;
+    line-height: 1.5;
+  }
+  .code-copy-btn:hover { opacity: 1; }
   #content pre code { background: none; border: none; padding: 0; font-size: 12.5px; line-height: 1.55; }
   #content blockquote {
     margin: 10px 0; padding: 8px 14px;
@@ -125,6 +142,35 @@
     function setTheme(theme) {
       document.documentElement.dataset.theme = theme === 'dark' ? 'dark' : 'light';
     }
+
+    /* ---------- 缩放：Ctrl + '+'/'-'/'0' 与 Ctrl+滚轮，交给宿主同步两侧 ---------- */
+    function requestZoom(delta) {
+      post({ type: 'zoomStep', delta: delta });
+    }
+
+    function setZoom(zoom) {
+      const value = typeof zoom === 'number' && isFinite(zoom) ? zoom : 1;
+      document.documentElement.style.zoom = Math.min(2, Math.max(0.5, value));
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (!e.ctrlKey || e.altKey) return;
+      const key = (e.key || '').toLowerCase();
+      if (key === '=' || key === '+' || key === 'add') {
+        e.preventDefault(); e.stopPropagation(); requestZoom(1);
+      } else if (key === '-' || key === 'subtract') {
+        e.preventDefault(); e.stopPropagation(); requestZoom(-1);
+      } else if (key === '0') {
+        e.preventDefault(); e.stopPropagation(); requestZoom(0);
+      }
+    }, true);
+
+    window.addEventListener('wheel', (e) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+      requestZoom(e.deltaY < 0 ? 1 : -1);
+    }, { passive: false, capture: true });
 
     // CF 用 $$$…$$$ / $$$$$$…$$$$$$，AtCoder 用 \(…\) / \[…\]，洛谷用 $…$ / $$…$$
     function normalizeMath(src) {
@@ -201,12 +247,50 @@
       html = renderMath(html, extracted.maths);
       contentEl.innerHTML = html;
       absolutize(contentEl);
+      addCopyButtons();
       statusEl.style.display = 'none';
       document.getElementById('scroll').scrollTop = 0;
     }
 
     function escapeHtml(text) {
       return String(text).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    }
+
+    // 给每个代码块（含样例输入/输出）右上角加复制按钮
+    function addCopyButtons() {
+      contentEl.querySelectorAll('pre').forEach((pre) => {
+        if (pre.querySelector('.code-copy-btn')) return;
+        const btn = document.createElement('button');
+        btn.className = 'code-copy-btn';
+        btn.type = 'button';
+        btn.textContent = '复制';
+        btn.addEventListener('click', () => copyCode(btn, pre));
+        pre.appendChild(btn);
+      });
+    }
+
+    async function copyCode(btn, pre) {
+      const code = pre.querySelector('code');
+      const text = code ? code.innerText : pre.innerText;
+      let ok = false;
+      try {
+        await navigator.clipboard.writeText(text);
+        ok = true;
+      } catch (e) {
+        // 降级：临时 textarea + execCommand
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.select();
+          ok = document.execCommand('copy');
+          document.body.removeChild(ta);
+        } catch (e2) { ok = false; }
+      }
+      btn.textContent = ok ? '已复制' : '复制失败';
+      setTimeout(() => { btn.textContent = '复制'; }, 1200);
     }
 
     contentEl.addEventListener('click', (e) => {
@@ -223,6 +307,7 @@
         const msg = e.data || {};
         if (msg.type === 'render') render(msg);
         else if (msg.type === 'theme') setTheme(msg.theme);
+        else if (msg.type === 'zoom') setZoom(msg.zoom);
         else if (msg.type === 'loading') {
           statusEl.style.display = 'block';
           statusEl.textContent = msg.text || '正在抓取题面…';

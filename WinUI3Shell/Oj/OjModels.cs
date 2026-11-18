@@ -7,6 +7,7 @@ using System.Text.Json;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.UI;
 
 namespace WinUI3Shell.Oj;
 
@@ -113,6 +114,34 @@ public sealed class OjProblemItem : INotifyPropertyChanged
     /// <summary>难度数值（洛谷 0~7，其他平台 -1）。</summary>
     public int Difficulty { get; set; } = -1;
 
+    /// <summary>洛谷难度名称。</summary>
+    public string DifficultyName => Difficulty switch
+    {
+        0 => "未评定",
+        1 => "入门",
+        2 => "普及-",
+        3 => "普及/提高-",
+        4 => "普及+/提高",
+        5 => "提高+/省选-",
+        6 => "省选/NOI-",
+        7 => "NOI/NOI+/CTSC",
+        _ => string.Empty,
+    };
+
+    /// <summary>洛谷官方难度配色，用于题单列表的难度圆点。</summary>
+    public Brush DifficultyBrush => new SolidColorBrush(Difficulty switch
+    {
+        0 => Color.FromArgb(0xFF, 0xBF, 0xBF, 0xBF),
+        1 => Color.FromArgb(0xFF, 0xFE, 0x4C, 0x61),
+        2 => Color.FromArgb(0xFF, 0xF3, 0x9C, 0x11),
+        3 => Color.FromArgb(0xFF, 0xFF, 0xC1, 0x16),
+        4 => Color.FromArgb(0xFF, 0x52, 0xC4, 0x1A),
+        5 => Color.FromArgb(0xFF, 0x34, 0x98, 0xDB),
+        6 => Color.FromArgb(0xFF, 0x9D, 0x3D, 0xCF),
+        7 => Color.FromArgb(0xFF, 0x0E, 0x1D, 0x69),
+        _ => Color.FromArgb(0, 0, 0, 0),
+    });
+
     /// <summary>列表左侧的平台图标（跟随明暗主题切换）。</summary>
     public ImageSource? Icon
     {
@@ -165,14 +194,88 @@ public sealed class OjProblemItem : INotifyPropertyChanged
     public override string ToString() => DisplayName;
 }
 
-public sealed class OjSample
+public sealed class OjSample : INotifyPropertyChanged
 {
+    private bool _isSelected = true;
+
     public string Title { get; set; } = string.Empty;
     public string Input { get; set; } = string.Empty;
     public string Output { get; set; } = string.Empty;
     public string Note { get; set; } = string.Empty;
 
     public Visibility NoteVisibility => string.IsNullOrWhiteSpace(Note) ? Visibility.Collapsed : Visibility.Visible;
+
+    /// <summary>测试面板里是否勾选。</summary>
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (_isSelected == value)
+            {
+                return;
+            }
+
+            _isSelected = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+        }
+    }
+
+    /// <summary>样例输入的单行摘要，用于测试面板的列表。</summary>
+    public string InputPreview
+    {
+        get
+        {
+            string oneLine = string.Join(
+                " ",
+                Input.Replace("\r", string.Empty).Split('\n', StringSplitOptions.RemoveEmptyEntries)).Trim();
+            if (oneLine.Length == 0)
+            {
+                return "（无输入）";
+            }
+
+            return oneLine.Length > 70 ? oneLine[..70] + "…" : oneLine;
+        }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+}
+
+/// <summary>测试结果的三种状态。</summary>
+public enum TestOutcome
+{
+    Passed,
+    Failed,
+    Info,
+}
+
+/// <summary>测试结果面板里的一条记录。</summary>
+public sealed class TestResultItem
+{
+    public string Title { get; init; } = string.Empty;
+
+    public string Status { get; init; } = string.Empty;
+
+    public TestOutcome Outcome { get; init; }
+
+    /// <summary>输入 / 期望 / 实际，仅失败或手动运行时填写。</summary>
+    public string Detail { get; init; } = string.Empty;
+
+    public string Glyph => Outcome switch
+    {
+        TestOutcome.Passed => "\uE73E",
+        TestOutcome.Failed => "\uE711",
+        _ => "\uE946",
+    };
+
+    public Brush StatusBrush => new SolidColorBrush(Outcome switch
+    {
+        TestOutcome.Passed => Color.FromArgb(0xFF, 0x2F, 0xA8, 0x4F),
+        TestOutcome.Failed => Color.FromArgb(0xFF, 0xD1, 0x34, 0x38),
+        _ => Color.FromArgb(0xFF, 0x8A, 0x88, 0x86),
+    });
+
+    public Visibility DetailVisibility => string.IsNullOrEmpty(Detail) ? Visibility.Collapsed : Visibility.Visible;
 }
 
 public sealed class OjProblemDetail

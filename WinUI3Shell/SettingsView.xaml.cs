@@ -117,6 +117,13 @@ public sealed partial class SettingsView : UserControl
         InsertTemplateSwitch.IsOn = settings.InsertTemplateOnNewFile;
         SetTemplateEditorEnabled(settings.InsertTemplateOnNewFile);
 
+        PracticeDifficultyBox.SelectedIndex = IndexOfTag(PracticeDifficultyBox, settings.PracticeDifficulty);
+        PracticeSortBox.SelectedIndex = IndexOfTag(PracticeSortBox, settings.PracticeSortMode);
+        PracticeOjLuoguSwitch.IsChecked = settings.PracticeOjEnabled("luogu");
+        PracticeOjCodeforcesSwitch.IsChecked = settings.PracticeOjEnabled("codeforces");
+        PracticeOjAtCoderSwitch.IsChecked = settings.PracticeOjEnabled("atcoder");
+        PracticeOjNowcoderSwitch.IsChecked = settings.PracticeOjEnabled("nowcoder");
+
         _loading = false;
 
         SendTemplateToEditor(settings.TemplateCode);
@@ -177,6 +184,7 @@ public sealed partial class SettingsView : UserControl
         "editor" => EditorPane,
         "compile" => CompilePane,
         "template" => TemplatePane,
+        "practice" => PracticePane,
         "about" => AboutPane,
         _ => GeneralPane,
     };
@@ -299,7 +307,7 @@ public sealed partial class SettingsView : UserControl
 
     /* ---------------- 关于 ---------------- */
 
-    private const string CurrentVersion = "Beta_1.1.20261116";
+    private const string CurrentVersion = "Beta_1.2.20261118";
     private const string TagsApi = "https://api.github.com/repos/MansonL289/HiMny-MnyCppIDE/tags";
 
     private static readonly HttpClient Http = CreateHttp();
@@ -988,4 +996,82 @@ public sealed partial class SettingsView : UserControl
         "wextra" => 2,
         _ => 0,
     };
+
+    /// <summary>按 ComboBoxItem.Tag 找选中项下标，找不到时回落到 0。</summary>
+    private static int IndexOfTag(ComboBox box, string tag)
+    {
+        for (int i = 0; i < box.Items.Count; i++)
+        {
+            if (box.Items[i] is ComboBoxItem item && item.Tag is string t &&
+                string.Equals(t, tag, StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
+        }
+        return 0;
+    }
+
+    /// <summary>取 ComboBox 当前选中项的 Tag 字符串。</summary>
+    private static string SelectedTag(ComboBox box, string fallback) =>
+        (box.SelectedItem as ComboBoxItem)?.Tag as string ?? fallback;
+
+    /* ---------------- 刷题模式 ---------------- */
+
+    private void PracticeDifficultyBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+        _settings.PracticeDifficulty = SelectedTag(PracticeDifficultyBox, "any");
+        RaiseChanged();
+    }
+
+    private void PracticeSortBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+        _settings.PracticeSortMode = SelectedTag(PracticeSortBox, "SubmitAsc");
+        RaiseChanged();
+    }
+
+    private void PracticeOjSwitch_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        // 至少保留一个平台，否则无法抽题
+        var boxes = new[] { PracticeOjLuoguSwitch, PracticeOjCodeforcesSwitch, PracticeOjAtCoderSwitch, PracticeOjNowcoderSwitch };
+        bool anyOn = false;
+        foreach (CheckBox box in boxes)
+        {
+            if (box.IsChecked == true)
+            {
+                anyOn = true;
+                break;
+            }
+        }
+        if (!anyOn && sender is CheckBox current)
+        {
+            _loading = true;
+            current.IsChecked = true;
+            _loading = false;
+            return;
+        }
+
+        var ids = new List<string>();
+        foreach (CheckBox box in boxes)
+        {
+            if (box.IsChecked == true && box.Tag is string id)
+            {
+                ids.Add(id);
+            }
+        }
+        _settings.PracticeOjs = string.Join(',', ids);
+        RaiseChanged();
+    }
 }

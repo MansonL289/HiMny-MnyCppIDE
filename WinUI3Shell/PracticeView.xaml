@@ -17,18 +17,18 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
-                        <Grid x:Name="OjIconRoot" Background="Transparent" Opacity="0.3">
+                        <Grid x:Name="OjIconRoot" Background="Transparent" Opacity="0.2">
                             <VisualStateManager.VisualStateGroups>
                                 <VisualStateGroup x:Name="CommonStates">
                                     <VisualState x:Name="Normal" />
                                     <VisualState x:Name="PointerOver">
                                         <VisualState.Setters>
-                                            <Setter Target="OjIconRoot.Opacity" Value="0.6" />
+                                            <Setter Target="OjIconRoot.Opacity" Value="0.45" />
                                         </VisualState.Setters>
                                     </VisualState>
                                     <VisualState x:Name="Pressed">
                                         <VisualState.Setters>
-                                            <Setter Target="OjIconRoot.Opacity" Value="0.8" />
+                                            <Setter Target="OjIconRoot.Opacity" Value="0.7" />
                                         </VisualState.Setters>
                                     </VisualState>
                                     <VisualState x:Name="Disabled">
@@ -43,12 +43,12 @@
                                     </VisualState>
                                     <VisualState x:Name="CheckedPointerOver">
                                         <VisualState.Setters>
-                                            <Setter Target="OjIconRoot.Opacity" Value="0.75" />
+                                            <Setter Target="OjIconRoot.Opacity" Value="0.9" />
                                         </VisualState.Setters>
                                     </VisualState>
                                     <VisualState x:Name="CheckedPressed">
                                         <VisualState.Setters>
-                                            <Setter Target="OjIconRoot.Opacity" Value="0.6" />
+                                            <Setter Target="OjIconRoot.Opacity" Value="0.7" />
                                         </VisualState.Setters>
                                     </VisualState>
                                     <VisualState x:Name="CheckedDisabled">
@@ -121,9 +121,205 @@
                     Opacity="0.5" />
             </Grid>
         </DataTemplate>
+
+        <!-- 题单卡片 -->
+        <DataTemplate x:Key="TrainingCardTemplate" x:DataType="oj:LuoguTrainingSummary">
+            <Border
+                Width="378"
+                Height="96"
+                Padding="18,14"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="12">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel
+                        Grid.Column="0"
+                        VerticalAlignment="Center"
+                        Spacing="5">
+                        <TextBlock
+                            Text="{x:Bind Title}"
+                            FontSize="14"
+                            FontWeight="SemiBold"
+                            MaxLines="1"
+                            TextTrimming="CharacterEllipsis" />
+                        <TextBlock
+                            Text="{x:Bind Meta}"
+                            FontSize="11"
+                            Opacity="0.55" />
+                    </StackPanel>
+                    <TextBlock
+                        Grid.Column="1"
+                        Margin="12,0,0,0"
+                        VerticalAlignment="Center"
+                        Text="{x:Bind Index}"
+                        FontSize="26"
+                        FontWeight="Bold"
+                        Opacity="0.1" />
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <!-- 题单板块卡片 -->
+        <DataTemplate x:Key="TrainingCategoryTemplate" x:DataType="oj:LuoguCategory">
+            <Border
+                Width="378"
+                Height="96"
+                Padding="18,14"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="12">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel
+                        Grid.Column="0"
+                        VerticalAlignment="Center"
+                        Spacing="5">
+                        <TextBlock
+                            Text="{x:Bind Name}"
+                            FontSize="14"
+                            FontWeight="SemiBold"
+                            MaxLines="1"
+                            TextTrimming="CharacterEllipsis" />
+                        <TextBlock
+                            Text="查看题单"
+                            FontSize="11"
+                            Opacity="0.55" />
+                    </StackPanel>
+                    <FontIcon
+                        Grid.Column="1"
+                        Margin="12,0,2,0"
+                        VerticalAlignment="Center"
+                        FontSize="14"
+                        Glyph="&#xE76C;"
+                        Opacity="0.35" />
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <!-- 题单里的题目：难度圆点 + 题号 + 标题 -->
+        <DataTemplate x:Key="TrainingProblemTemplate" x:DataType="oj:OjProblemItem">
+            <Grid ColumnSpacing="10" Padding="2,4" AutomationProperties.Name="{x:Bind DisplayName}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    Grid.Column="0"
+                    MinWidth="66"
+                    VerticalAlignment="Center"
+                    FontSize="12"
+                    FontFamily="Cascadia Mono, Consolas, monospace"
+                    Opacity="0.55"
+                    Text="{x:Bind Id}" />
+                <TextBlock
+                    Grid.Column="1"
+                    VerticalAlignment="Center"
+                    FontSize="13"
+                    MaxLines="1"
+                    Text="{x:Bind Title}"
+                    TextTrimming="CharacterEllipsis" />
+                <TextBlock
+                    Grid.Column="2"
+                    VerticalAlignment="Center"
+                    FontSize="11"
+                    Opacity="0.55"
+                    Text="{x:Bind DifficultyName}" />
+                <Button
+                    Grid.Column="3"
+                    Width="28"
+                    Height="28"
+                    Padding="0"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    CornerRadius="6"
+                    Click="StarResult_Click"
+                    Tag="{x:Bind Key}">
+                    <FontIcon
+                        FontSize="14"
+                        Foreground="{x:Bind StarForeground, Mode=OneWay}"
+                        Glyph="{x:Bind StarGlyph, Mode=OneWay}" />
+                </Button>
+            </Grid>
+        </DataTemplate>
+        <!-- 测试面板：选择样例 / 手动输入 -->
+        <DataTemplate x:Key="TestSampleItemTemplate" x:DataType="oj:OjSample">
+            <CheckBox
+                Padding="0,2"
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Stretch"
+                IsChecked="{x:Bind IsSelected, Mode=TwoWay}">
+                <StackPanel Spacing="2">
+                    <TextBlock FontSize="13" Text="{x:Bind Title}" />
+                    <TextBlock
+                        FontFamily="Cascadia Mono, Consolas, monospace"
+                        FontSize="11"
+                        MaxLines="1"
+                        Opacity="0.5"
+                        Text="{x:Bind InputPreview}"
+                        TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </CheckBox>
+        </DataTemplate>
+
+        <!-- 测试结果卡片 -->
+        <DataTemplate x:Key="TestResultTemplate" x:DataType="oj:TestResultItem">
+            <Border
+                Margin="0,0,0,8"
+                Padding="12,10"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="8">
+                <StackPanel Spacing="8">
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <FontIcon
+                            Grid.Column="0"
+                            FontSize="13"
+                            Foreground="{x:Bind StatusBrush}"
+                            Glyph="{x:Bind Glyph}" />
+                        <TextBlock
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            FontSize="13"
+                            Text="{x:Bind Title}"
+                            TextTrimming="CharacterEllipsis" />
+                        <TextBlock
+                            Grid.Column="2"
+                            VerticalAlignment="Center"
+                            FontSize="11"
+                            Foreground="{x:Bind StatusBrush}"
+                            Text="{x:Bind Status}" />
+                    </Grid>
+                    <TextBlock
+                        FontFamily="Cascadia Mono, Consolas, monospace"
+                        FontSize="11"
+                        IsTextSelectionEnabled="True"
+                        Opacity="0.75"
+                        Text="{x:Bind Detail}"
+                        TextWrapping="Wrap"
+                        Visibility="{x:Bind DetailVisibility}" />
+                </StackPanel>
+            </Border>
+        </DataTemplate>
     </UserControl.Resources>
 
-    <Grid x:Name="PracticeRoot" Background="Transparent">
+    <Grid x:Name="PracticeRoot" KeyDown="PracticeRoot_KeyDown" Background="Transparent">
         <!-- 首页：大标题 + 搜索框 + OJ 图标筛选 -->
         <Grid x:Name="HomePanel" Padding="0,0,0,40" AutomationProperties.AutomationId="PracticeHomePanel">
             <Button
@@ -154,6 +350,13 @@
                     FontSize="46"
                     FontWeight="SemiBold"
                     HorizontalAlignment="Center" />
+                <TextBlock
+                    Text="BETA"
+                    FontSize="13"
+                    FontWeight="Bold"
+                    HorizontalAlignment="Center"
+                    Opacity="0.45"
+                    Margin="0,-10,0,0" />
                 <TextBox
                     x:Name="SearchBox"
                     Width="440"
@@ -166,10 +369,40 @@
                     KeyDown="SearchBox_KeyDown"
                     AutomationProperties.AutomationId="PracticeSearchBox" />
                 <StackPanel
-                    Orientation="Horizontal"
-                    Spacing="6"
                     HorizontalAlignment="Center"
-                    Margin="0,2,0,0">
+                    Orientation="Horizontal"
+                    Spacing="8">
+                    <Button
+                        x:Name="RandomProblemButton"
+                        Height="38"
+                        Padding="18,0"
+                        CornerRadius="10"
+                        Click="RandomProblem_Click"
+                        ToolTipService.ToolTip="从洛谷随机抽一道题"
+                        AutomationProperties.AutomationId="PracticeRandomButton">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <Image
+                                x:Name="RandomLuoguIcon"
+                                Width="16"
+                                Height="16"
+                                VerticalAlignment="Center" />
+                            <TextBlock Text="随机抽题" FontSize="13" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button
+                        Height="38"
+                        Padding="18,0"
+                        CornerRadius="10"
+                        Click="TrainingButton_Click"
+                        AutomationProperties.AutomationId="PracticeTrainingButton">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <FontIcon Glyph="&#xE8FD;" FontSize="14" />
+                            <TextBlock Text="洛谷题单" FontSize="13" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+                <Grid HorizontalAlignment="Center" Margin="0,2,0,0">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
                     <ToggleButton
                         x:Name="LuoguToggle"
                         Tag="luogu"
@@ -206,7 +439,23 @@
                         Click="OjToggle_Click">
                         <Image x:Name="NowCoderIcon" Width="28" Height="28" />
                     </ToggleButton>
-                </StackPanel>
+                    </StackPanel>
+                    <!-- 提示气泡：纯展示、不拦截输入，点击可穿透到下面的控件 -->
+                    <Border
+                        x:Name="OjTipBubble"
+                        VerticalAlignment="Bottom"
+                        HorizontalAlignment="Center"
+                        Margin="0,0,0,-38"
+                        Padding="12,6"
+                        CornerRadius="6"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        IsHitTestVisible="False"
+                        Visibility="Collapsed">
+                        <TextBlock x:Name="OjTipText" FontSize="12" />
+                    </Border>
+                </Grid>
             </StackPanel>
         </Grid>
 
@@ -336,6 +585,378 @@
                 SelectionMode="None"
                 ItemTemplate="{StaticResource ProblemItemTemplate}"
                 CornerRadius="10" />
+        </Grid>
+
+        <!-- 洛谷官方题单 -->
+        <Grid x:Name="TrainingPanel" Visibility="Collapsed" AutomationProperties.AutomationId="PracticeTrainingPanel">
+            <Grid.RenderTransform>
+                <TranslateTransform x:Name="TrainingTransform" />
+            </Grid.RenderTransform>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Grid
+                Grid.Row="0"
+                MaxWidth="780"
+                Padding="24,14,24,10"
+                HorizontalAlignment="Center"
+                ColumnSpacing="10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Button
+                    Grid.Column="0"
+                    Width="32"
+                    Height="32"
+                    Padding="0"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    CornerRadius="8"
+                    Click="TrainingBackToHome_Click">
+                    <FontIcon Glyph="&#xE72B;" FontSize="15" />
+                </Button>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                    <TextBlock Text="洛谷题单" FontSize="15" FontWeight="SemiBold" />
+                    <TextBlock
+                        x:Name="TrainingStatusText"
+                        FontSize="11"
+                        Opacity="0.55"
+                        Text="官方训练题单" />
+                </StackPanel>
+                <ProgressRing
+                    x:Name="TrainingRing"
+                    Grid.Column="2"
+                    Width="16"
+                    Height="16"
+                    VerticalAlignment="Center"
+                    IsActive="False"
+                    Visibility="Collapsed" />
+            </Grid>
+            <Grid Grid.Row="1" Width="780" HorizontalAlignment="Center" Margin="0,0,0,20">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBox
+                    x:Name="CategorySearchBox"
+                    Grid.Row="0"
+                    Padding="14,9,14,9"
+                    CornerRadius="10"
+                    FontSize="13"
+                    PlaceholderText="搜索板块"
+                    TextChanged="CategorySearch_TextChanged" />
+                <ScrollViewer
+                    Grid.Row="1"
+                    Margin="0,8,0,0"
+                    VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock
+                            x:Name="SrqcHeader"
+                            Margin="4,2,0,4"
+                            FontSize="12"
+                            FontWeight="SemiBold"
+                            Opacity="0.6"
+                            Text="深入浅出" />
+                        <GridView
+                            x:Name="SrqcGrid"
+                            IsItemClickEnabled="True"
+                            ItemClick="CategoryGrid_ItemClick"
+                            ItemTemplate="{StaticResource TrainingCategoryTemplate}"
+                            ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                            ScrollViewer.VerticalScrollMode="Disabled"
+                            SelectionMode="None">
+                            <GridView.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <ItemsWrapGrid ItemWidth="390" ItemHeight="104" Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </GridView.ItemsPanel>
+                        </GridView>
+
+                        <TextBlock
+                            x:Name="MonthHeader"
+                            Margin="4,10,0,4"
+                            FontSize="12"
+                            FontWeight="SemiBold"
+                            Opacity="0.6"
+                            Text="月赛" />
+                        <GridView
+                            x:Name="MonthGrid"
+                            IsItemClickEnabled="True"
+                            ItemClick="CategoryGrid_ItemClick"
+                            ItemTemplate="{StaticResource TrainingCategoryTemplate}"
+                            ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                            ScrollViewer.VerticalScrollMode="Disabled"
+                            SelectionMode="None">
+                            <GridView.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <ItemsWrapGrid ItemWidth="390" ItemHeight="104" Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </GridView.ItemsPanel>
+                        </GridView>
+
+                        <TextBlock
+                            x:Name="ContestHeader"
+                            Margin="4,10,0,4"
+                            FontSize="12"
+                            FontWeight="SemiBold"
+                            Opacity="0.6"
+                            Text="竞赛" />
+                        <GridView
+                            x:Name="ContestGrid"
+                            IsItemClickEnabled="True"
+                            ItemClick="CategoryGrid_ItemClick"
+                            ItemTemplate="{StaticResource TrainingCategoryTemplate}"
+                            ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                            ScrollViewer.VerticalScrollMode="Disabled"
+                            SelectionMode="None">
+                            <GridView.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <ItemsWrapGrid ItemWidth="390" ItemHeight="104" Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </GridView.ItemsPanel>
+                        </GridView>
+
+                        <TextBlock
+                            x:Name="BookHeader"
+                            Margin="4,10,0,4"
+                            FontSize="12"
+                            FontWeight="SemiBold"
+                            Opacity="0.6"
+                            Text="书籍" />
+                        <GridView
+                            x:Name="BookGrid"
+                            IsItemClickEnabled="True"
+                            ItemClick="CategoryGrid_ItemClick"
+                            ItemTemplate="{StaticResource TrainingCategoryTemplate}"
+                            ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                            ScrollViewer.VerticalScrollMode="Disabled"
+                            SelectionMode="None">
+                            <GridView.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <ItemsWrapGrid ItemWidth="390" ItemHeight="104" Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </GridView.ItemsPanel>
+                        </GridView>
+
+                        <TextBlock
+                            x:Name="SelectHeader"
+                            Margin="4,10,0,4"
+                            FontSize="12"
+                            FontWeight="SemiBold"
+                            Opacity="0.6"
+                            Text="用户分享" />
+                        <GridView
+                            x:Name="SelectGrid"
+                            IsItemClickEnabled="True"
+                            ItemClick="CategoryGrid_ItemClick"
+                            ItemTemplate="{StaticResource TrainingCategoryTemplate}"
+                            ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                            ScrollViewer.VerticalScrollMode="Disabled"
+                            SelectionMode="None">
+                            <GridView.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <ItemsWrapGrid ItemWidth="390" ItemHeight="104" Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </GridView.ItemsPanel>
+                        </GridView>
+                    </StackPanel>
+                </ScrollViewer>
+                <TextBlock
+                    x:Name="TrainingEmptyText"
+                    Grid.Row="1"
+                    Margin="0,80,0,0"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Top"
+                    FontSize="13"
+                    Opacity="0.55"
+                    Text="题单加载失败，请检查网络后重新打开"
+                    Visibility="Collapsed" />
+            </Grid>
+        </Grid>
+
+        <!-- 板块内的题单 -->
+        <Grid x:Name="TrainingListPanel" Visibility="Collapsed" AutomationProperties.AutomationId="PracticeTrainingListPanel">
+            <Grid.RenderTransform>
+                <TranslateTransform x:Name="TrainingListTransform" />
+            </Grid.RenderTransform>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <Grid
+                Grid.Row="0"
+                MaxWidth="780"
+                Padding="24,14,24,10"
+                HorizontalAlignment="Center"
+                ColumnSpacing="10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Button
+                    Grid.Column="0"
+                    Width="32"
+                    Height="32"
+                    Padding="0"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    CornerRadius="8"
+                    Click="TrainingListBack_Click">
+                    <FontIcon Glyph="&#xE72B;" FontSize="15" />
+                </Button>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                    <TextBlock
+                        x:Name="TrainingListTitle"
+                        FontSize="15"
+                        FontWeight="SemiBold"
+                        MaxLines="1"
+                        TextTrimming="CharacterEllipsis" />
+                    <TextBlock
+                        x:Name="TrainingListStatus"
+                        FontSize="11"
+                        Opacity="0.55" />
+                </StackPanel>
+                <ProgressRing
+                    x:Name="TrainingListRing"
+                    Grid.Column="2"
+                    Width="16"
+                    Height="16"
+                    VerticalAlignment="Center"
+                    IsActive="False"
+                    Visibility="Collapsed" />
+            </Grid>
+            <TextBox
+                x:Name="TrainingSearchBox"
+                Grid.Row="1"
+                Width="780"
+                Margin="0,0,0,4"
+                Padding="14,9,14,9"
+                HorizontalAlignment="Center"
+                CornerRadius="10"
+                FontSize="13"
+                PlaceholderText="搜索题单"
+                TextChanged="TrainingSearch_TextChanged" />
+            <GridView
+                x:Name="TrainingGrid"
+                Grid.Row="2"
+                Width="780"
+                Margin="0,0,0,8"
+                HorizontalAlignment="Center"
+                IsItemClickEnabled="True"
+                ItemClick="TrainingGrid_ItemClick"
+                ItemTemplate="{StaticResource TrainingCardTemplate}"
+                SelectionMode="None">
+                <GridView.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <ItemsWrapGrid ItemWidth="390" ItemHeight="104" Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </GridView.ItemsPanel>
+            </GridView>
+            <Button
+                x:Name="TrainingMoreButton"
+                Grid.Row="3"
+                Margin="0,0,0,16"
+                Padding="18,5"
+                HorizontalAlignment="Center"
+                CornerRadius="8"
+                Click="TrainingMore_Click"
+                Content="加载更多"
+                FontSize="12"
+                Visibility="Collapsed" />
+        </Grid>
+
+        <!-- 题单内容 -->
+        <Grid x:Name="TrainingDetailPanel" Visibility="Collapsed" AutomationProperties.AutomationId="PracticeTrainingDetailPanel">
+            <Grid.RenderTransform>
+                <TranslateTransform x:Name="TrainingDetailTransform" />
+            </Grid.RenderTransform>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Grid
+                Grid.Row="0"
+                MaxWidth="720"
+                Padding="24,14,24,10"
+                HorizontalAlignment="Center"
+                ColumnSpacing="10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Button
+                    Grid.Column="0"
+                    Width="32"
+                    Height="32"
+                    Padding="0"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    CornerRadius="8"
+                    Click="TrainingDetailBack_Click">
+                    <FontIcon Glyph="&#xE72B;" FontSize="15" />
+                </Button>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                    <TextBlock
+                        x:Name="TrainingProblemTitle"
+                        FontSize="15"
+                        FontWeight="SemiBold"
+                        MaxLines="1"
+                        TextTrimming="CharacterEllipsis" />
+                    <TextBlock
+                        x:Name="TrainingProblemMeta"
+                        FontSize="11"
+                        Opacity="0.55" />
+                </StackPanel>
+                <ProgressRing
+                    x:Name="TrainingProblemRing"
+                    Grid.Column="2"
+                    Width="16"
+                    Height="16"
+                    VerticalAlignment="Center"
+                    IsActive="False"
+                    Visibility="Collapsed" />
+            </Grid>
+            <TextBox
+                x:Name="TrainingProblemSearchBox"
+                Grid.Row="1"
+                Width="720"
+                Margin="0,0,0,4"
+                Padding="14,9,14,9"
+                HorizontalAlignment="Center"
+                CornerRadius="10"
+                FontSize="13"
+                PlaceholderText="搜索题目"
+                TextChanged="TrainingProblemSearch_TextChanged" />
+            <ListView
+                x:Name="TrainingProblemList"
+                Grid.Row="2"
+                Width="720"
+                MaxWidth="720"
+                Margin="0,0,0,20"
+                HorizontalAlignment="Center"
+                CornerRadius="10"
+                IsItemClickEnabled="True"
+                ItemClick="TrainingProblemList_ItemClick"
+                ItemTemplate="{StaticResource TrainingProblemTemplate}"
+                SelectionMode="None" />
+            <TextBlock
+                x:Name="TrainingProblemEmptyText"
+                Grid.Row="2"
+                Margin="0,40,0,0"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Top"
+                FontSize="13"
+                Opacity="0.55"
+                Text="没有匹配的题目"
+                Visibility="Collapsed" />
         </Grid>
 
         <!-- 题目详情 -->
@@ -495,6 +1116,229 @@
             </Grid>
         </Grid>
 
+        <!-- 测试浮层 -->
+        <Grid
+            x:Name="TestOverlay"
+            Background="#66000000"
+            Visibility="Collapsed"
+            AutomationProperties.AutomationId="PracticeTestOverlay">
+            <Border
+                Width="760"
+                MaxHeight="660"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
+                BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="12">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- 标题 -->
+                    <Grid Padding="20,16,12,10" ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock
+                                x:Name="TestTitleText"
+                                FontSize="15"
+                                FontWeight="SemiBold"
+                                Text="测试" />
+                            <TextBlock
+                                x:Name="TestSubtitleText"
+                                FontSize="11"
+                                Opacity="0.55" />
+                        </StackPanel>
+                        <Button
+                            Grid.Column="1"
+                            Width="30"
+                            Height="30"
+                            Padding="0"
+                            VerticalAlignment="Top"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            CornerRadius="8"
+                            Click="CloseTest_Click">
+                            <FontIcon FontSize="12" Glyph="&#xE711;" />
+                        </Button>
+                    </Grid>
+
+                    <!-- 选择样例 / 手动输入 -->
+                    <Grid
+                        x:Name="TestSetupPanel"
+                        Grid.Row="1"
+                        Padding="20,0,20,8"
+                        RowSpacing="10">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Orientation="Horizontal" Spacing="16">
+                            <RadioButton
+                                x:Name="TestSampleMode"
+                                Content="样例"
+                                IsChecked="True"
+                                Checked="TestMode_Checked" />
+                            <RadioButton
+                                x:Name="TestManualMode"
+                                Content="手动输入"
+                                Checked="TestMode_Checked" />
+                        </StackPanel>
+
+                        <Grid x:Name="TestSampleSection" Grid.Row="1" RowSpacing="4">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <Grid ColumnSpacing="4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock
+                                    VerticalAlignment="Center"
+                                    FontSize="11"
+                                    Opacity="0.55"
+                                    Text="选择要运行的样例" />
+                                <HyperlinkButton
+                                    Grid.Column="1"
+                                    Padding="6,2"
+                                    FontSize="12"
+                                    Content="全选"
+                                    Click="TestSelectAll_Click" />
+                                <HyperlinkButton
+                                    Grid.Column="2"
+                                    Padding="6,2"
+                                    FontSize="12"
+                                    Content="全不选"
+                                    Click="TestSelectNone_Click" />
+                            </Grid>
+                            <ListView
+                                x:Name="TestSampleList"
+                                Grid.Row="1"
+                                MaxHeight="300"
+                                ItemTemplate="{StaticResource TestSampleItemTemplate}"
+                                SelectionMode="None" />
+                        </Grid>
+
+                        <StackPanel
+                            x:Name="TestManualSection"
+                            Grid.Row="1"
+                            Spacing="6"
+                            Visibility="Collapsed">
+                            <TextBlock FontSize="11" Opacity="0.55" Text="标准输入" />
+                            <TextBox
+                                x:Name="TestManualInput"
+                                Height="230"
+                                AcceptsReturn="True"
+                                FontFamily="Cascadia Mono, Consolas, monospace"
+                                FontSize="12"
+                                TextWrapping="Wrap" />
+                        </StackPanel>
+
+                        <TextBlock
+                            x:Name="TestHintText"
+                            Grid.Row="2"
+                            FontSize="11"
+                            Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                            TextWrapping="Wrap"
+                            Visibility="Collapsed" />
+                    </Grid>
+
+                    <!-- 结果 -->
+                    <Grid
+                        x:Name="TestResultPanel"
+                        Grid.Row="1"
+                        Padding="20,0,20,8"
+                        RowSpacing="8"
+                        Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <Border
+                            x:Name="TestCompileErrorBox"
+                            Padding="10,8"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            CornerRadius="8"
+                            Visibility="Collapsed">
+                            <TextBlock
+                                x:Name="TestCompileError"
+                                FontFamily="Cascadia Mono, Consolas, monospace"
+                                FontSize="11"
+                                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                IsTextSelectionEnabled="True"
+                                TextWrapping="Wrap" />
+                        </Border>
+                        <ListView
+                            x:Name="TestResultList"
+                            Grid.Row="1"
+                            MaxHeight="440"
+                            ItemTemplate="{StaticResource TestResultTemplate}"
+                            SelectionMode="None" />
+                    </Grid>
+
+                    <!-- 底部按钮 -->
+                    <Grid Grid.Row="2" Padding="20,12,20,16" ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ProgressRing
+                            x:Name="TestRunRing"
+                            Width="16"
+                            Height="16"
+                            VerticalAlignment="Center"
+                            IsActive="False"
+                            Visibility="Collapsed" />
+                        <Button
+                            x:Name="TestBackButton"
+                            Grid.Column="2"
+                            Height="32"
+                            Padding="16,0"
+                            CornerRadius="8"
+                            FontSize="12"
+                            Content="重新选择"
+                            Click="TestBack_Click"
+                            Visibility="Collapsed" />
+                        <Button
+                            x:Name="TestCloseButton"
+                            Grid.Column="3"
+                            Height="32"
+                            Padding="16,0"
+                            CornerRadius="8"
+                            FontSize="12"
+                            Content="关闭"
+                            Click="CloseTest_Click"
+                            Visibility="Collapsed" />
+                        <Button
+                            x:Name="RunTestButton"
+                            Grid.Column="4"
+                            Height="32"
+                            Padding="20,0"
+                            CornerRadius="8"
+                            FontSize="12"
+                            Content="运行测试"
+                            Style="{StaticResource AccentButtonStyle}"
+                            Click="RunTests_Click"
+                            AutomationProperties.AutomationId="PracticeRunTestButton" />
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
+
         <!-- 登录浮层：圆角 WebView2 -->
         <Grid
             x:Name="LoginOverlay"
@@ -550,8 +1394,17 @@
                         BorderThickness="0,1,0,0"
                         CornerRadius="0,0,12,12"
                         Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
-                        <!-- 底部留出圆角背景：WebView2 的原生画面不会被父级圆角裁切 -->
-                        <WebView2 x:Name="LoginWebView" Margin="0,0,0,10" />
+                        <Grid>
+                            <!-- 底部留出圆角背景：WebView2 的原生画面不会被父级圆角裁切 -->
+                            <WebView2 x:Name="LoginWebView" Margin="0,0,0,10" />
+                            <!-- 加载占位：页面加载完成前遮住 WebView 白屏，加载后再显示内容 -->
+                            <Grid x:Name="LoginLoadingPanel" Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
+                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
+                                    <ProgressRing Width="36" Height="36" IsActive="True" />
+                                    <TextBlock Text="页面加载中…" FontSize="13" Opacity="0.6" HorizontalAlignment="Center" />
+                                </StackPanel>
+                            </Grid>
+                        </Grid>
                     </Border>
                 </Grid>
             </Border>

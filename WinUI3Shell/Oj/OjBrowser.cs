@@ -73,7 +73,16 @@ public sealed class OjBrowser
     /// </summary>
     public async Task<JsonNode?> RunAsync(string url, string script, int settleMs, bool disableJs = false, CancellationToken cancellationToken = default)
     {
-        await EnsureAsync();
+        try
+        {
+            await EnsureAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // WebView2 运行时缺失或初始化失败时，把原因带回给调用方，而不是静默返回空结果
+            return ErrorNode(ex);
+        }
+
         await _gate.WaitAsync(cancellationToken);
         try
         {
@@ -93,9 +102,9 @@ public sealed class OjBrowser
             {
                 core.Navigate(url);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                return null;
+                return ErrorNode(ex);
             }
 
             Task finished = await Task.WhenAny(navigation.Task, Task.Delay(TimeSpan.FromSeconds(30), cancellationToken));
@@ -117,9 +126,9 @@ public sealed class OjBrowser
             {
                 raw = await core.ExecuteScriptAsync(script);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                return null;
+                return ErrorNode(ex);
             }
 
             return ParseScriptResult(raw);
@@ -128,6 +137,18 @@ public sealed class OjBrowser
         {
             _gate.Release();
         }
+    }
+
+    /// <summary>把异常包装成调用方认识的 error 节点。</summary>
+    private static JsonNode ErrorNode(Exception ex)
+    {
+        string message = ex.Message.Replace('\r', ' ').Replace('\n', ' ');
+        if (message.Length > 160)
+        {
+            message = message[..160] + "…";
+        }
+
+        return new JsonObject { ["error"] = "WebView2 不可用：" + message };
     }
 
     /// <summary>ExecuteScriptAsync 的结果是 JSON 文本；脚本返回字符串时会被再包一层。</summary>

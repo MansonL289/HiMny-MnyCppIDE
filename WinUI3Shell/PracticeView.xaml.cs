@@ -1,12 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -17,6 +21,7 @@ using Microsoft.Web.WebView2.Core;
 using WinUI3Shell.Oj;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.System;
+using Windows.UI.Core;
 using DispatcherQueueTimer = Microsoft.UI.Dispatching.DispatcherQueueTimer;
 
 namespace WinUI3Shell;
@@ -33,11 +38,35 @@ public sealed partial class PracticeView : UserControl
     private readonly OjBrowser _fetchBrowser;
     private readonly ObservableCollection<OjProblemItem> _results = new();
     private readonly ObservableCollection<OjProblemItem> _starred = new();
+    private readonly ObservableCollection<OjProblemItem> _trainingProblems = new();
+    private readonly ObservableCollection<LuoguTrainingSummary> _trainings = new();
+    private readonly ObservableCollection<LuoguTrainingSummary> _visibleTrainings = new();
+    private readonly ObservableCollection<LuoguCategory> _categories = new();
+    private readonly ObservableCollection<LuoguCategory> _srqcCategories = new();
+    private readonly ObservableCollection<LuoguCategory> _monthCategories = new();
+    private readonly ObservableCollection<LuoguCategory> _contestCategories = new();
+    private readonly ObservableCollection<LuoguCategory> _bookCategories = new();
+    private readonly ObservableCollection<LuoguCategory> _selectCategories = new();
+    private readonly ObservableCollection<OjProblemItem> _visibleTrainingProblems = new();
     private readonly ObservableCollection<OjSample> _samples = new();
     private readonly HashSet<string> _seenItems = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>板块列表本次运行只抓一次。</summary>
+    private bool _categoriesLoaded;
+    private LuoguCategory? _currentCategory;
+    private int _trainingPage = 1;
+    private int _trainingTotal;
+    private bool _trainingLoading;
+    private LuoguTrainingSummary? _currentTraining;
+
+    /// <summary>题目详情是从哪个列表打开的，返回时回到对应面板。</summary>
+    private ProblemOrigin _problemOrigin = ProblemOrigin.Results;
+
     /// <summary>本次运行中已确认登录过的 OJ：页面判断不了登录态时用它避免重复提示。</summary>
     private readonly HashSet<string> _loggedInOjs = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>本次打开题目是否已自动弹过登录窗（含用户手动关闭），避免同一题反复弹。</summary>
+    private bool _loginAutoPrompted;
     private readonly List<string> _pendingProblemMessages = new();
     private readonly List<string> _pendingEditorMessages = new();
 
@@ -60,6 +89,9 @@ public sealed partial class PracticeView : UserControl
     private bool _isDark;
     private DispatcherQueueTimer? _loginTimer;
 
+    /// <summary>刷题页缩放比例：题面与草稿两侧同步，宿主侧按钮保持原大小。</summary>
+    private double _uiZoom = 1;
+
     public PracticeView()
     {
         InitializeComponent();
@@ -72,6 +104,13 @@ public sealed partial class PracticeView : UserControl
 
         ResultList.ItemsSource = _results;
         StarredList.ItemsSource = _starred;
+        TrainingGrid.ItemsSource = _visibleTrainings;
+        SrqcGrid.ItemsSource = _srqcCategories;
+        MonthGrid.ItemsSource = _monthCategories;
+        ContestGrid.ItemsSource = _contestCategories;
+        BookGrid.ItemsSource = _bookCategories;
+        SelectGrid.ItemsSource = _selectCategories;
+        TrainingProblemList.ItemsSource = _visibleTrainingProblems;
 
         _isDark = ActualTheme == ElementTheme.Dark;
         ApplyOjIcons();
@@ -81,6 +120,7 @@ public sealed partial class PracticeView : UserControl
             _isDark = ActualTheme == ElementTheme.Dark;
             ApplyOjIcons();
             RefreshResultIcons();
+            RefreshTrainingIcons();
             if (_currentItem is not null)
             {
                 ProblemOjIcon.Source = OjIcons.Get(_currentItem.OjId, _isDark);
@@ -94,6 +134,7 @@ public sealed partial class PracticeView : UserControl
     private void ApplyOjIcons()
     {
         LuoguIcon.Source = OjIcons.Get("luogu", _isDark);
+        RandomLuoguIcon.Source = OjIcons.Get("luogu", _isDark);
         CodeforcesIcon.Source = OjIcons.Get("codeforces", _isDark);
         AtCoderIcon.Source = OjIcons.Get("atcoder", _isDark);
         NowCoderIcon.Source = OjIcons.Get("nowcoder", _isDark);
@@ -104,6 +145,57 @@ public sealed partial class PracticeView : UserControl
         foreach (OjProblemItem item in _results)
         {
             item.Icon = OjIcons.Get(item.OjId, _isDark);
+        }
+    }
+
+    private void RefreshTrainingIcons()
+    {
+        foreach (OjProblemItem item in _trainingProblems)
+        {
+            item.Icon = OjIcons.Get(item.OjId, _isDark);
+        }
+    }
+
+    /* ---------------- 缩放：题面与草稿同步，宿主按钮不缩放 ---------------- */
+
+    private void ChangeUiZoom(int delta)
+    {
+        double next = delta == 0 ? 1 : Math.Round(_uiZoom + delta * 0.1, 2);
+        _uiZoom = Math.Min(2, Math.Max(0.5, next));
+        ApplyUiZoom();
+    }
+
+    private void ApplyUiZoom()
+    {
+        SendProblemMessage(new { type = "zoom", zoom = _uiZoom });
+        SendEditorMessage(new { type = "zoom", zoom = _uiZoom });
+    }
+
+    /// <summary>焦点在宿主控件（搜索框等）上时的 Ctrl + '+/-/0'。</summary>
+    private void PracticeRoot_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (!InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control)
+                .HasFlag(CoreVirtualKeyStates.Down))
+        {
+            return;
+        }
+
+        switch ((int)e.Key)
+        {
+            case 187: // '=' 与 '+'
+            case 107: // 小键盘 +
+                ChangeUiZoom(1);
+                e.Handled = true;
+                break;
+            case 189: // '-'
+            case 109: // 小键盘 -
+                ChangeUiZoom(-1);
+                e.Handled = true;
+                break;
+            case 48: // 0 恢复默认
+                ChangeUiZoom(0);
+                e.Handled = true;
+                break;
         }
     }
 
@@ -129,6 +221,13 @@ public sealed partial class PracticeView : UserControl
     /// <summary>面板入场动画：淡入 + 轻微上移。</summary>
     private static void PlayEnter(UIElement target, TranslateTransform? slide = null)
     {
+        // 先设动画初始状态，避免元素在动画播放前以最终状态闪现
+        target.Opacity = 0;
+        if (slide is not null)
+        {
+            slide.Y = 14;
+        }
+
         var storyboard = new Storyboard();
         var fade = new DoubleAnimation
         {
@@ -155,7 +254,9 @@ public sealed partial class PracticeView : UserControl
             storyboard.Children.Add(move);
         }
 
-        storyboard.Begin();
+        // 元素从 Collapsed 变为 Visible 的同帧直接 Begin 可能不会播放动画，
+        // 延迟到布局/渲染更新后再播放，确保淡入与滑动生效。
+        target.DispatcherQueue.TryEnqueue(() => storyboard.Begin());
     }
 
     private static string ViewerPageUrl => $"https://{PracticeHostName}/practice/problem.html";
@@ -180,6 +281,21 @@ public sealed partial class PracticeView : UserControl
 
         ApplySettingsToEditor();
         SendTheme();
+        ApplyDefaultSortMode();
+    }
+
+    /// <summary>把设置里的默认排序应用到结果页排序下拉框。</summary>
+    private void ApplyDefaultSortMode()
+    {
+        string mode = _settings.PracticeSortMode;
+        for (int i = 0; i < SortComboBox.Items.Count; i++)
+        {
+            if (SortComboBox.Items[i] is ComboBoxItem item && item.Tag is string tag && tag == mode)
+            {
+                SortComboBox.SelectedIndex = i;
+                return;
+            }
+        }
     }
 
     /// <summary>离开刷题模式时调用：取消搜索/抓题、停掉登录轮询，收起浮层。</summary>
@@ -195,12 +311,30 @@ public sealed partial class PracticeView : UserControl
         CloseLogin();
     }
 
-    /// <summary>Esc：先收起登录浮层，其他状态交给主窗口。</summary>
+    /// <summary>Esc：先收起登录浮层，再按层级退回上一页。</summary>
     public void HandleEscape()
     {
         if (LoginOverlay.Visibility == Visibility.Visible)
         {
             CloseLogin();
+            return;
+        }
+
+        if (TrainingDetailPanel.Visibility == Visibility.Visible)
+        {
+            TrainingDetailBack_Click(this, new RoutedEventArgs());
+            return;
+        }
+
+        if (TrainingListPanel.Visibility == Visibility.Visible)
+        {
+            TrainingListBack_Click(this, new RoutedEventArgs());
+            return;
+        }
+
+        if (TrainingPanel.Visibility == Visibility.Visible)
+        {
+            TrainingBackToHome_Click(this, new RoutedEventArgs());
         }
     }
 
@@ -210,6 +344,8 @@ public sealed partial class PracticeView : UserControl
         _loginTimer = null;
         LoginRing.IsActive = false;
         LoginOverlay.Visibility = Visibility.Collapsed;
+        // 用户主动关闭登录窗后，本题不再自动弹出，避免打扰看题。
+        _loginAutoPrompted = true;
     }
 
     /// <summary>设置页里的外观改动实时同步到草稿编辑器。</summary>
@@ -240,14 +376,156 @@ public sealed partial class PracticeView : UserControl
     private void OjToggle_Click(object sender, RoutedEventArgs e)
     {
         // 至少保留一个平台，否则搜索没有意义
-        if (SelectedOjs().Count > 0)
+        if (SelectedOjs().Count == 0 && sender is ToggleButton forced)
         {
+            forced.IsChecked = true;
+        }
+
+        // 点击提示：告诉用户这次改动让哪些平台参与搜索
+        if (sender is ToggleButton toggle && toggle.Tag is string ojId)
+        {
+            string name = _config.Find(ojId)?.Name ?? ojId;
+            bool included = toggle.IsChecked == true;
+            ShowOjToggleTip(included ? $"{name} 内的题目会进行搜索" : $"{name} 内的题目不会被搜索到");
+        }
+    }
+
+    private DispatcherTimer? _ojTipTimer;
+
+    /// <summary>在图标下方弹一个 2 秒自动消失的轻提示（不拦截输入，点击可穿透）。</summary>
+    private void ShowOjToggleTip(string message)
+    {
+        _ojTipTimer?.Stop();
+        OjTipText.Text = message;
+        OjTipBubble.Visibility = Visibility.Visible;
+
+        _ojTipTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        _ojTipTimer.Tick += (_, _) =>
+        {
+            OjTipBubble.Visibility = Visibility.Collapsed;
+            _ojTipTimer?.Stop();
+        };
+        _ojTipTimer.Start();
+    }
+
+    /* ---------------- 随机抽题 ---------------- */
+
+    private static readonly Random _rng = new();
+
+    /// <summary>洛谷题单的题数信息（按难度缓存），随机抽题时省掉一次列表页抓取。</summary>
+    private readonly Dictionary<string, (int Total, int PerPage)> _luoguListInfo = new();
+
+    /// <summary>把难度档位映射成一个具体的洛谷难度值（0-7），用于服务端过滤。</summary>
+    private static int PickLuoguDifficulty(string difficulty)
+    {
+        int[] pool = difficulty switch
+        {
+            "easy" => new[] { 1 },
+            "medium" => new[] { 2, 3 },
+            "hard" => new[] { 4, 5 },
+            "expert" => new[] { 6, 7 },
+            _ => new[] { 0, 1, 2, 3, 4, 5, 6, 7 },
+        };
+        return pool[_rng.Next(pool.Length)];
+    }
+
+    private async void RandomProblem_Click(object sender, RoutedEventArgs e)
+    {
+        OjDefinition? oj = _config.Ojs.FirstOrDefault(o => o.Id.Equals("luogu", StringComparison.OrdinalIgnoreCase));
+        if (oj is null)
+        {
+            ShowOjToggleTip("没有找到洛谷题库配置");
             return;
         }
 
-        if (sender is ToggleButton toggle)
+        string difficulty = _settings.PracticeDifficulty;
+        int luoguDifficulty = difficulty == "any" ? -1 : PickLuoguDifficulty(difficulty);
+        string WithDifficulty(string url) => luoguDifficulty >= 0 ? url + "&difficulty=" + luoguDifficulty : url;
+
+        RandomProblemButton.IsEnabled = false;
+        try
         {
-            toggle.IsChecked = true;
+            // 1. 只有第一次抽题需要先拿总题数/每页题数，之后直接用缓存，少抓一次列表页
+            string cacheKey = luoguDifficulty.ToString();
+            JsonArray? firstItems = null;
+            if (!_luoguListInfo.TryGetValue(cacheKey, out (int Total, int PerPage) info))
+            {
+                JsonNode? node = await _fetchBrowser.RunAsync(
+                    WithDifficulty(oj.BuildSearchUrl(string.Empty, 1)),
+                    oj.SearchScript,
+                    oj.SettleMs,
+                    oj.DisableJs,
+                    _cancelSource?.Token ?? default);
+
+                if (node?["items"] is not JsonArray listItems || listItems.Count == 0)
+                {
+                    ShowOjToggleTip("洛谷题单加载失败，请稍后重试");
+                    return;
+                }
+
+                firstItems = listItems;
+                info = (
+                    Math.Max(listItems.Count, node?["count"]?.GetValue<int>() ?? listItems.Count),
+                    Math.Max(1, node?["perPage"]?.GetValue<int>() ?? listItems.Count));
+                _luoguListInfo[cacheKey] = info;
+            }
+
+            int perPage = info.PerPage;
+            int pages = Math.Max(1, (info.Total + perPage - 1) / perPage);
+
+            // 2. 随机页 + 随机位置，直接打开抽到的题目
+            int page = _rng.Next(1, pages + 1);
+            int index = _rng.Next(0, perPage);
+
+            JsonArray items = firstItems ?? new JsonArray();
+            if (firstItems is null || page != 1)
+            {
+                JsonNode? pageNode = await _fetchBrowser.RunAsync(
+                    WithDifficulty(oj.BuildSearchUrl(string.Empty, page)),
+                    oj.SearchScript,
+                    oj.SettleMs,
+                    oj.DisableJs,
+                    _cancelSource?.Token ?? default);
+
+                if (pageNode?["items"] is not JsonArray pageItems || pageItems.Count == 0)
+                {
+                    ShowOjToggleTip("洛谷题单加载失败，请稍后重试");
+                    return;
+                }
+
+                items = pageItems;
+            }
+
+            JsonNode? row = items[Math.Min(index, items.Count - 1)];
+            string url = row?["url"]?.ToString() ?? string.Empty;
+            string title = row?["title"]?.ToString() ?? string.Empty;
+            if (url.Length == 0 || title.Length == 0)
+            {
+                ShowOjToggleTip("没抽到题目，再试一次");
+                return;
+            }
+
+            var item = new OjProblemItem
+            {
+                OjId = oj.Id,
+                OjName = oj.Name,
+                Id = row?["id"]?.ToString() ?? string.Empty,
+                Title = title.Trim(),
+                Url = url,
+                Meta = row?["meta"]?.ToString() ?? string.Empty,
+                Difficulty = row?["difficulty"]?.GetValue<int>() ?? -1,
+                Icon = OjIcons.Get(oj.Id, _isDark),
+            };
+
+            _problemOrigin = ProblemOrigin.Home;
+            await OpenProblemAsync(item);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            RandomProblemButton.IsEnabled = true;
         }
     }
 
@@ -318,7 +596,7 @@ public sealed partial class PracticeView : UserControl
             string error = node["error"]?.ToString() ?? string.Empty;
             if (node["items"] is not JsonArray items)
             {
-                return (0, error.Length > 0 ? oj.Name + "（" + error + "）" : string.Empty, false, true);
+                return (0, error.Length > 0 ? oj.Name + "（" + error + "）" : oj.Name + "（页面解析失败）", false, true);
             }
 
             int added = 0;
@@ -541,6 +819,9 @@ public sealed partial class PracticeView : UserControl
         HomePanel.Visibility = Visibility.Collapsed;
         ResultsPanel.Visibility = Visibility.Visible;
         ProblemPanel.Visibility = Visibility.Collapsed;
+        TrainingPanel.Visibility = Visibility.Collapsed;
+        TrainingListPanel.Visibility = Visibility.Collapsed;
+        TrainingDetailPanel.Visibility = Visibility.Collapsed;
         PlayEnter(ResultsPanel, ResultsTransform);
     }
 
@@ -548,6 +829,9 @@ public sealed partial class PracticeView : UserControl
     {
         ResultsPanel.Visibility = Visibility.Collapsed;
         ProblemPanel.Visibility = Visibility.Collapsed;
+        TrainingPanel.Visibility = Visibility.Collapsed;
+        TrainingListPanel.Visibility = Visibility.Collapsed;
+        TrainingDetailPanel.Visibility = Visibility.Collapsed;
         SearchLoadingOverlay.Visibility = Visibility.Collapsed;
         HomePanel.Visibility = Visibility.Visible;
         PlayEnter(HomeStack, HomeStackTransform);
@@ -557,6 +841,21 @@ public sealed partial class PracticeView : UserControl
     private void BackToResults_Click(object sender, RoutedEventArgs e)
     {
         ProblemPanel.Visibility = Visibility.Collapsed;
+        if (_problemOrigin == ProblemOrigin.Training && _currentTraining is not null)
+        {
+            TrainingListPanel.Visibility = Visibility.Collapsed;
+            TrainingDetailPanel.Visibility = Visibility.Visible;
+            PlayEnter(TrainingDetailPanel, TrainingDetailTransform);
+            return;
+        }
+
+        if (_problemOrigin == ProblemOrigin.Starred && _starred.Count > 0)
+        {
+            StarredPanel.Visibility = Visibility.Visible;
+            PlayEnter(StarredPanel, StarredTransform);
+            return;
+        }
+
         if (_results.Count > 0)
         {
             ResultsPanel.Visibility = Visibility.Visible;
@@ -579,7 +878,8 @@ public sealed partial class PracticeView : UserControl
         }
 
         OjProblemItem? item = _results.FirstOrDefault(r => r.Key == key)
-                              ?? _starred.FirstOrDefault(r => r.Key == key);
+                              ?? _starred.FirstOrDefault(r => r.Key == key)
+                              ?? _trainingProblems.FirstOrDefault(r => r.Key == key);
         if (item is null)
         {
             return;
@@ -618,6 +918,9 @@ public sealed partial class PracticeView : UserControl
         HomePanel.Visibility = Visibility.Collapsed;
         ResultsPanel.Visibility = Visibility.Collapsed;
         ProblemPanel.Visibility = Visibility.Collapsed;
+        TrainingPanel.Visibility = Visibility.Collapsed;
+        TrainingListPanel.Visibility = Visibility.Collapsed;
+        TrainingDetailPanel.Visibility = Visibility.Collapsed;
         StarredPanel.Visibility = Visibility.Visible;
         PlayEnter(StarredPanel, StarredTransform);
     }
@@ -633,6 +936,7 @@ public sealed partial class PracticeView : UserControl
     {
         if (e.ClickedItem is OjProblemItem item)
         {
+            _problemOrigin = ProblemOrigin.Starred;
             await OpenProblemAsync(item);
         }
     }
@@ -647,12 +951,455 @@ public sealed partial class PracticeView : UserControl
         }
     }
 
+    /* ---------------- 洛谷官方题单：板块 → 题单 → 题目 ---------------- */
+
+    private async void TrainingButton_Click(object sender, RoutedEventArgs e) => await ShowTrainingsAsync();
+
+    /// <summary>第一级：板块列表。</summary>
+    private async Task ShowTrainingsAsync()
+    {
+        HomePanel.Visibility = Visibility.Collapsed;
+        ResultsPanel.Visibility = Visibility.Collapsed;
+        ProblemPanel.Visibility = Visibility.Collapsed;
+        TrainingListPanel.Visibility = Visibility.Collapsed;
+        TrainingDetailPanel.Visibility = Visibility.Collapsed;
+        TrainingPanel.Visibility = Visibility.Visible;
+        PlayEnter(TrainingPanel, TrainingTransform);
+        CategorySearchBox.Text = string.Empty;
+
+        if (_categoriesLoaded)
+        {
+            ApplyCategoryFilter();
+            return;
+        }
+
+        TrainingEmptyText.Visibility = Visibility.Collapsed;
+        TrainingRing.IsActive = true;
+        TrainingRing.Visibility = Visibility.Visible;
+        TrainingStatusText.Text = "正在加载…";
+
+        JsonNode? node;
+        try
+        {
+            node = await FetchTrainingAsync(LuoguTraining.ListUrl, LuoguTraining.ListScript);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        finally
+        {
+            TrainingRing.IsActive = false;
+            TrainingRing.Visibility = Visibility.Collapsed;
+        }
+
+        _categories.Clear();
+        if (node?["categories"] is JsonArray categories)
+        {
+            foreach (JsonNode? row in categories)
+            {
+                string key = row?["key"]?.ToString() ?? string.Empty;
+                string name = row?["name"]?.ToString() ?? string.Empty;
+                if (key.Length == 0 || name.Length == 0)
+                {
+                    continue;
+                }
+
+                _categories.Add(new LuoguCategory { Key = key, Name = name });
+            }
+
+            // 官网导航里的「精选用户分享」不在分类 JSON 中，单独补到末尾
+            if (!_categories.Any(c => c.Key == "select"))
+            {
+                _categories.Add(new LuoguCategory { Key = "select", Name = "精选用户分享" });
+            }
+        }
+
+        _categoriesLoaded = _categories.Count > 0;
+        ApplyCategoryFilter();
+        if (!_categoriesLoaded)
+        {
+            TrainingStatusText.Text = "板块加载失败";
+            TrainingEmptyText.Text = "题单加载失败，请检查网络后重新打开";
+            TrainingEmptyText.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void CategorySearch_TextChanged(object sender, TextChangedEventArgs e) => ApplyCategoryFilter();
+
+    /// <summary>按「深入浅出 / 月赛 / 竞赛 / 书籍 / 用户分享」把板块填进各自的分组，并应用搜索关键词。</summary>
+    private void ApplyCategoryFilter()
+    {
+        string query = CategorySearchBox.Text.Trim();
+        FillCategoryGroup(_srqcCategories, "srqc-", query, SrqcHeader, SrqcGrid);
+        FillCategoryGroup(_monthCategories, "month-", query, MonthHeader, MonthGrid);
+        FillCategoryGroup(_contestCategories, "contest.", query, ContestHeader, ContestGrid);
+        FillCategoryGroup(_bookCategories, "book.", query, BookHeader, BookGrid);
+        FillCategoryGroup(_selectCategories, "select", query, SelectHeader, SelectGrid);
+
+        int shown = _srqcCategories.Count + _monthCategories.Count + _contestCategories.Count
+                    + _bookCategories.Count + _selectCategories.Count;
+        if (query.Length > 0)
+        {
+            TrainingEmptyText.Text = "没有匹配的板块";
+            TrainingEmptyText.Visibility = shown == 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+        else if (_categoriesLoaded)
+        {
+            TrainingEmptyText.Text = "题单加载失败，请检查网络后重新打开";
+            TrainingEmptyText.Visibility = _categories.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        if (_categoriesLoaded)
+        {
+            TrainingStatusText.Text = query.Length > 0
+                ? "匹配 " + shown + " 个板块"
+                : _categories.Count + " 个板块";
+        }
+    }
+
+    private void FillCategoryGroup(
+        ObservableCollection<LuoguCategory> target,
+        string prefix,
+        string query,
+        TextBlock header,
+        GridView grid)
+    {
+        target.Clear();
+        foreach (LuoguCategory category in _categories)
+        {
+            if (!category.Key.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (query.Length > 0 && category.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                continue;
+            }
+
+            target.Add(category);
+        }
+
+        Visibility visibility = target.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        header.Visibility = visibility;
+        grid.Visibility = visibility;
+    }
+
+    private async void CategoryGrid_ItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is LuoguCategory category)
+        {
+            await OpenCategoryAsync(category);
+        }
+    }
+
+    /// <summary>第二级：板块内的题单，支持分页加载更多。</summary>
+    private async Task OpenCategoryAsync(LuoguCategory category)
+    {
+        _currentCategory = category;
+        _trainingPage = 1;
+        _trainingTotal = 0;
+        _trainings.Clear();
+        TrainingSearchBox.Text = string.Empty;
+
+        TrainingListTitle.Text = category.Name;
+        TrainingListStatus.Text = "正在加载…";
+        TrainingMoreButton.Visibility = Visibility.Collapsed;
+        TrainingPanel.Visibility = Visibility.Collapsed;
+        TrainingDetailPanel.Visibility = Visibility.Collapsed;
+        TrainingListPanel.Visibility = Visibility.Visible;
+        PlayEnter(TrainingListPanel, TrainingListTransform);
+
+        await LoadTrainingPageAsync(append: false);
+    }
+
+    private async void TrainingMore_Click(object sender, RoutedEventArgs e)
+    {
+        _trainingPage++;
+        if (!await LoadTrainingPageAsync(append: true))
+        {
+            _trainingPage--;
+        }
+    }
+
+    private async Task<bool> LoadTrainingPageAsync(bool append)
+    {
+        if (_currentCategory is null || _trainingLoading)
+        {
+            return false;
+        }
+
+        _trainingLoading = true;
+        TrainingMoreButton.IsEnabled = false;
+        TrainingListRing.IsActive = true;
+        TrainingListRing.Visibility = Visibility.Visible;
+
+        JsonNode? node;
+        try
+        {
+            node = await FetchTrainingAsync(
+                LuoguTraining.ListUrlFor(_currentCategory.Key, _trainingPage),
+                LuoguTraining.ListScript);
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+        finally
+        {
+            _trainingLoading = false;
+            TrainingMoreButton.IsEnabled = true;
+            TrainingListRing.IsActive = false;
+            TrainingListRing.Visibility = Visibility.Collapsed;
+        }
+
+        if (node?["items"] is not JsonArray items)
+        {
+            TrainingListStatus.Text = "加载失败，请稍后重试";
+            return false;
+        }
+
+        if (node?["total"] is JsonValue totalValue && totalValue.TryGetValue(out int total))
+        {
+            _trainingTotal = total;
+        }
+
+        if (!append)
+        {
+            _trainings.Clear();
+        }
+
+        int index = _trainings.Count + 1;
+        foreach (JsonNode? row in items)
+        {
+            string id = row?["id"]?.ToString() ?? string.Empty;
+            string title = row?["title"]?.ToString() ?? string.Empty;
+            if (id.Length == 0 || title.Length == 0)
+            {
+                continue;
+            }
+
+            _trainings.Add(new LuoguTrainingSummary
+            {
+                Id = id,
+                Title = title,
+                ProblemCount = row?["problemCount"]?.GetValue<int>() ?? 0,
+                MarkCount = row?["markCount"]?.GetValue<int>() ?? 0,
+                Index = index.ToString("00", CultureInfo.InvariantCulture),
+            });
+            index++;
+        }
+
+        if (_trainingTotal < _trainings.Count)
+        {
+            _trainingTotal = _trainings.Count;
+        }
+
+        ApplyTrainingFilter();
+        return true;
+    }
+
+    private void TrainingSearch_TextChanged(object sender, TextChangedEventArgs e) => ApplyTrainingFilter();
+
+    /// <summary>在已加载的题单里按标题过滤，只影响当前板块的子页面。</summary>
+    private void ApplyTrainingFilter()
+    {
+        string query = TrainingSearchBox.Text.Trim();
+        bool filtering = query.Length > 0;
+
+        _visibleTrainings.Clear();
+        foreach (LuoguTrainingSummary training in _trainings)
+        {
+            if (filtering && training.Title.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                continue;
+            }
+
+            _visibleTrainings.Add(training);
+        }
+
+        TrainingMoreButton.Visibility = !filtering && _trainings.Count > 0 && _trainings.Count < _trainingTotal
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        if (filtering)
+        {
+            TrainingListStatus.Text = "匹配 " + _visibleTrainings.Count + " 个题单";
+        }
+        else if (_trainings.Count == 0)
+        {
+            TrainingListStatus.Text = "正在加载…";
+        }
+        else
+        {
+            TrainingListStatus.Text = _trainings.Count + " / " + _trainingTotal + " 个题单";
+        }
+    }
+
+    private async void TrainingGrid_ItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is LuoguTrainingSummary summary)
+        {
+            await OpenTrainingAsync(summary);
+        }
+    }
+
+    private async Task OpenTrainingAsync(LuoguTrainingSummary summary)
+    {
+        _currentTraining = summary;
+        _trainingProblems.Clear();
+        _visibleTrainingProblems.Clear();
+        TrainingProblemSearchBox.Text = string.Empty;
+        TrainingProblemTitle.Text = summary.Title;
+        TrainingProblemMeta.Text = "正在加载…";
+        TrainingPanel.Visibility = Visibility.Collapsed;
+        TrainingListPanel.Visibility = Visibility.Collapsed;
+        TrainingDetailPanel.Visibility = Visibility.Visible;
+        PlayEnter(TrainingDetailPanel, TrainingDetailTransform);
+
+        JsonNode? node;
+        TrainingProblemRing.IsActive = true;
+        TrainingProblemRing.Visibility = Visibility.Visible;
+        try
+        {
+            node = await FetchTrainingAsync(LuoguTraining.DetailUrl(summary.Id), LuoguTraining.DetailScript);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        finally
+        {
+            TrainingProblemRing.IsActive = false;
+            TrainingProblemRing.Visibility = Visibility.Collapsed;
+        }
+
+        if (node?["items"] is not JsonArray items)
+        {
+            TrainingProblemMeta.Text = "题单加载失败";
+            return;
+        }
+
+        foreach (JsonNode? row in items)
+        {
+            string pid = row?["id"]?.ToString() ?? string.Empty;
+            string title = row?["title"]?.ToString() ?? string.Empty;
+            if (pid.Length == 0 || title.Length == 0)
+            {
+                continue;
+            }
+
+            long submit = row?["submitCount"]?.GetValue<long>() ?? 0;
+            long accepted = row?["acceptedCount"]?.GetValue<long>() ?? 0;
+            _trainingProblems.Add(new OjProblemItem
+            {
+                OjId = "luogu",
+                OjName = "洛谷",
+                Id = pid,
+                Title = title,
+                Url = "https://www.luogu.com.cn/problem/" + pid,
+                Difficulty = row?["difficulty"]?.GetValue<int>() ?? -1,
+                SubmitCount = submit,
+                PassRate = submit > 0 ? (double)accepted / submit : -1,
+                Icon = OjIcons.Get("luogu", _isDark),
+                IsStarred = StarService.IsStarred("luogu", pid),
+            });
+        }
+
+        ApplyTrainingProblemFilter();
+    }
+
+    private void TrainingProblemSearch_TextChanged(object sender, TextChangedEventArgs e) => ApplyTrainingProblemFilter();
+
+    /// <summary>在当前题单的题目里按标题/题号过滤。</summary>
+    private void ApplyTrainingProblemFilter()
+    {
+        string query = TrainingProblemSearchBox.Text.Trim();
+        _visibleTrainingProblems.Clear();
+        foreach (OjProblemItem problem in _trainingProblems)
+        {
+            if (query.Length > 0
+                && problem.Title.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0
+                && problem.Id.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                continue;
+            }
+
+            _visibleTrainingProblems.Add(problem);
+        }
+
+        TrainingProblemEmptyText.Visibility = _trainingProblems.Count > 0 && _visibleTrainingProblems.Count == 0
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        if (_trainingProblems.Count == 0)
+        {
+            return;
+        }
+
+        TrainingProblemMeta.Text = query.Length > 0
+            ? "匹配 " + _visibleTrainingProblems.Count + " 道题"
+            : _trainingProblems.Count + " 道题";
+    }
+
+    private async void TrainingProblemList_ItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is OjProblemItem item)
+        {
+            _problemOrigin = ProblemOrigin.Training;
+            await OpenProblemAsync(item);
+        }
+    }
+
+    private void TrainingBackToHome_Click(object sender, RoutedEventArgs e)
+    {
+        TrainingPanel.Visibility = Visibility.Collapsed;
+        TrainingListPanel.Visibility = Visibility.Collapsed;
+        HomePanel.Visibility = Visibility.Visible;
+        PlayEnter(HomeStack, HomeStackTransform);
+        SearchBox.Focus(FocusState.Programmatic);
+    }
+
+    private void TrainingListBack_Click(object sender, RoutedEventArgs e)
+    {
+        TrainingListPanel.Visibility = Visibility.Collapsed;
+        TrainingPanel.Visibility = Visibility.Visible;
+        PlayEnter(TrainingPanel, TrainingTransform);
+    }
+
+    private void TrainingDetailBack_Click(object sender, RoutedEventArgs e)
+    {
+        TrainingDetailPanel.Visibility = Visibility.Collapsed;
+        TrainingListPanel.Visibility = Visibility.Visible;
+        PlayEnter(TrainingListPanel, TrainingListTransform);
+    }
+
+    /// <summary>抓取题单页面；遇到人机验证时先让用户完成，再重试一次。</summary>
+    private async Task<JsonNode?> FetchTrainingAsync(string url, string script)
+    {
+        CancellationToken token = _cancelSource?.Token ?? default;
+        JsonNode? node = await _fetchBrowser.RunAsync(url, script, 800, false, token);
+        if (node?["captcha"] is JsonValue captcha && captcha.TryGetValue(out bool required) && required)
+        {
+            if (!await ShowCaptchaAsync(url))
+            {
+                return null;
+            }
+
+            node = await _fetchBrowser.RunAsync(url, script, 800, false, token);
+        }
+
+        return node;
+    }
+
     /* ---------------- 打开题目 ---------------- */
 
     private async void ResultList_ItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is OjProblemItem item)
         {
+            _problemOrigin = ProblemOrigin.Results;
             await OpenProblemAsync(item);
         }
     }
@@ -671,6 +1418,9 @@ public sealed partial class PracticeView : UserControl
 
         HomePanel.Visibility = Visibility.Collapsed;
         ResultsPanel.Visibility = Visibility.Collapsed;
+        TrainingPanel.Visibility = Visibility.Collapsed;
+        TrainingListPanel.Visibility = Visibility.Collapsed;
+        TrainingDetailPanel.Visibility = Visibility.Collapsed;
         ProblemPanel.Visibility = Visibility.Visible;
         PlayEnter(ProblemPanel, ProblemTransform);
 
@@ -678,7 +1428,7 @@ public sealed partial class PracticeView : UserControl
         ProblemOjIcon.Source = OjIcons.Get(item.OjId, _isDark);
         ProblemTitleText.Text = item.Title;
         ProblemStatusText.Text = "正在抓取题面…";
-        LoginButton.Content = "登录";
+        ApplyLoginButtonVisibility(oj);
         _samples.Clear();
 
         await Task.Yield();
@@ -692,18 +1442,26 @@ public sealed partial class PracticeView : UserControl
         SendProblemMessage(new { type = "loading", text = "正在抓取题面…" });
         SendEditorOpen();
 
-        // 先在后台检查登录态：配置了登录 Cookie 的 OJ 才检测，未登录才弹出登录窗；
-        // 没配置 Cookie 的站点不自动弹窗，用户可点「登录」手动登录。
-        bool loggedIn = oj.LoginCookies.Count > 0
-            ? await CheckLoginAsync(oj, includePageScript: false)
-            : true;
-        if (token != _problemToken)
+        // 后台检测登录：有登录 Cookie 的 OJ 先用 Cookie 预检，未登录就弹窗；
+        // 其它 OJ（如洛谷）在抓题面时按页面返回的登录态再判断，未登录同样弹窗。
+        _loginAutoPrompted = false;
+        if (oj.LoginCookies.Count > 0 && !_loggedInOjs.Contains(oj.Id))
         {
-            return;
-        }
-        if (!loggedIn)
-        {
-            _ = ShowLoginAsync();
+            bool loggedIn = await CheckLoginAsync(oj, includePageScript: false);
+            if (token != _problemToken)
+            {
+                return;
+            }
+            if (loggedIn)
+            {
+                _loggedInOjs.Add(oj.Id);
+                ApplyLoginButtonVisibility(oj);
+            }
+            else
+            {
+                _loginAutoPrompted = true;
+                _ = ShowLoginAsync();
+            }
         }
 
         await FetchProblemAsync(token);
@@ -879,6 +1637,8 @@ public sealed partial class PracticeView : UserControl
             return;
         }
 
+        // 先显示加载占位，等页面 NavigationCompleted 后再露出内容
+        LoginLoadingPanel.Visibility = Visibility.Visible;
         LoginWebView.CoreWebView2.Navigate(oj.LoginUrl);
         StartLoginWatch();
     }
@@ -914,6 +1674,7 @@ public sealed partial class PracticeView : UserControl
             LoginRing.IsActive = false;
             LoginHintText.Text = string.Empty;
             _loggedInOjs.Add(_currentOj.Id);
+            ApplyLoginButtonVisibility(_currentOj);
             await Task.Delay(300);
             LoginOverlay.Visibility = Visibility.Collapsed;
 
@@ -929,16 +1690,32 @@ public sealed partial class PracticeView : UserControl
         }
     }
 
+    /// <summary>已登录则隐藏登录按钮，未登录才显示。</summary>
+    private void ApplyLoginButtonVisibility(OjDefinition oj)
+    {
+        LoginButton.Content = "登录";
+        LoginButton.Visibility = _loggedInOjs.Contains(oj.Id) ? Visibility.Collapsed : Visibility.Visible;
+    }
+
     private Task UpdateLoginStateAsync(OjDefinition oj, bool? pageLoginState)
     {
-        // 登录态由打开题面前的后台检测负责弹窗；这里只记录已登录的 OJ，
-        // 登录按钮始终显示「登录」，不再显示「已登录」。
+        // 已登录的 OJ 记录下来，本次运行不再重复检测。
         if (pageLoginState == true)
         {
             _loggedInOjs.Add(oj.Id);
         }
+        else if (pageLoginState == false
+            && !_loggedInOjs.Contains(oj.Id)
+            && !_loginAutoPrompted
+            && LoginOverlay.Visibility != Visibility.Visible
+            && _currentOj?.Id == oj.Id)
+        {
+            // 后台抓到未登录状态，主动弹出登录窗让用户登录（每题只自动弹一次）。
+            _loginAutoPrompted = true;
+            _ = ShowLoginAsync();
+        }
 
-        LoginButton.Content = "登录";
+        ApplyLoginButtonVisibility(oj);
         return Task.CompletedTask;
     }
 
@@ -1073,23 +1850,152 @@ public sealed partial class PracticeView : UserControl
         return _codeTcs.Task;
     }
 
-    private async void TestSample_Click(object sender, RoutedEventArgs e)
+    private void TestSample_Click(object sender, RoutedEventArgs e) => ShowTestSetup();
+
+    /// <summary>打开测试面板，默认勾选全部样例。</summary>
+    private void ShowTestSetup()
     {
-        if (_currentItem is null) return;
+        if (_currentItem is null)
+        {
+            return;
+        }
+
+        TestOverlay.Visibility = Visibility.Visible;
+        TestSetupPanel.Visibility = Visibility.Visible;
+        TestResultPanel.Visibility = Visibility.Collapsed;
+        RunTestButton.Visibility = Visibility.Visible;
+        TestBackButton.Visibility = Visibility.Collapsed;
+        TestCloseButton.Visibility = Visibility.Collapsed;
+        TestRunRing.IsActive = false;
+        TestRunRing.Visibility = Visibility.Collapsed;
+        TestHintText.Visibility = Visibility.Collapsed;
+        TestCompileErrorBox.Visibility = Visibility.Collapsed;
+
+        TestTitleText.Text = "测试";
+        TestSubtitleText.Text = _samples.Count > 0
+            ? _samples.Count + " 个样例"
+            : "本题没有抓到样例，可以手动输入";
+
+        foreach (OjSample sample in _samples)
+        {
+            sample.IsSelected = true;
+        }
+
+        TestSampleList.ItemsSource = _samples;
+
+        // 没抓到样例时直接切到手动输入
+        if (_samples.Count == 0)
+        {
+            TestManualMode.IsChecked = true;
+        }
+        else
+        {
+            TestSampleMode.IsChecked = true;
+        }
+
+        ApplyTestMode();
+    }
+
+    private void TestMode_Checked(object sender, RoutedEventArgs e) => ApplyTestMode();
+
+    private void ApplyTestMode()
+    {
+        if (TestSampleSection is null || TestManualSection is null)
+        {
+            return;
+        }
+
+        bool manual = TestManualMode.IsChecked == true;
+        TestSampleSection.Visibility = manual ? Visibility.Collapsed : Visibility.Visible;
+        TestManualSection.Visibility = manual ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void TestSelectAll_Click(object sender, RoutedEventArgs e) => SetAllSamplesSelected(true);
+
+    private void TestSelectNone_Click(object sender, RoutedEventArgs e) => SetAllSamplesSelected(false);
+
+    private void SetAllSamplesSelected(bool selected)
+    {
+        foreach (OjSample sample in _samples)
+        {
+            sample.IsSelected = selected;
+        }
+    }
+
+    private void TestBack_Click(object sender, RoutedEventArgs e) => ShowTestSetup();
+
+    private void CloseTest_Click(object sender, RoutedEventArgs e)
+    {
+        TestOverlay.Visibility = Visibility.Collapsed;
+        TestRunRing.IsActive = false;
+        TestRunRing.Visibility = Visibility.Collapsed;
+    }
+
+    private void ShowTestHint(string text)
+    {
+        TestHintText.Text = text;
+        TestHintText.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>切到结果视图，先显示编译中的状态。</summary>
+    private void ShowTestResultView()
+    {
+        TestHintText.Visibility = Visibility.Collapsed;
+        TestSetupPanel.Visibility = Visibility.Collapsed;
+        TestResultPanel.Visibility = Visibility.Visible;
+        RunTestButton.Visibility = Visibility.Collapsed;
+        TestBackButton.Visibility = Visibility.Visible;
+        TestCloseButton.Visibility = Visibility.Visible;
+        TestCompileErrorBox.Visibility = Visibility.Collapsed;
+        TestResultList.ItemsSource = null;
+        TestTitleText.Text = "测试结果";
+        TestSubtitleText.Text = "正在编译…";
+        TestRunRing.Visibility = Visibility.Visible;
+        TestRunRing.IsActive = true;
+    }
+
+    private async void RunTests_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentItem is null)
+        {
+            return;
+        }
+
+        bool manual = TestManualMode.IsChecked == true;
+        var cases = new List<(string Title, string Input, string Expected, bool Check)>();
+        if (manual)
+        {
+            cases.Add(("手动输入", TestManualInput.Text ?? string.Empty, string.Empty, false));
+        }
+        else
+        {
+            foreach (OjSample sample in _samples.Where(s => s.IsSelected))
+            {
+                cases.Add((sample.Title, sample.Input, sample.Output, true));
+            }
+
+            if (cases.Count == 0)
+            {
+                ShowTestHint("请至少选择一个样例");
+                return;
+            }
+        }
 
         string code = await GetEditorCodeAsync();
         if (string.IsNullOrWhiteSpace(code))
         {
-            await ShowSimpleDialogAsync("测试", "草稿是空的，先写点代码再测试吧。");
+            ShowTestHint("草稿是空的，先写点代码");
             return;
         }
 
         string? compiler = FindCompiler();
         if (compiler is null)
         {
-            await ShowSimpleDialogAsync("测试", "未找到 g++。请确认 Assets\\mingw64\\bin\\g++.exe 存在，或系统已安装 MinGW-w64。");
+            ShowTestHint("未找到 g++，请确认 Assets\\mingw64\\bin\\g++.exe 存在");
             return;
         }
+
+        ShowTestResultView();
 
         string tempDir = Path.Combine(Path.GetTempPath(), "mny-practice");
         Directory.CreateDirectory(tempDir);
@@ -1097,7 +2003,6 @@ public sealed partial class PracticeView : UserControl
         string exePath = Path.Combine(tempDir, "solution.exe");
         File.WriteAllText(sourcePath, code);
 
-        // 编译
         var psi = new System.Diagnostics.ProcessStartInfo
         {
             FileName = compiler,
@@ -1110,21 +2015,29 @@ public sealed partial class PracticeView : UserControl
         var compile = System.Diagnostics.Process.Start(psi);
         if (compile is null)
         {
-            await ShowSimpleDialogAsync("测试", "无法启动编译器。");
+            TestRunRing.IsActive = false;
+            TestRunRing.Visibility = Visibility.Collapsed;
+            TestSubtitleText.Text = "编译失败";
+            TestCompileError.Text = "无法启动编译器";
+            TestCompileErrorBox.Visibility = Visibility.Visible;
             return;
         }
+
         string compileErr = await compile.StandardError.ReadToEndAsync();
         await compile.WaitForExitAsync();
         if (compile.ExitCode != 0)
         {
-            await ShowSimpleDialogAsync("编译失败", compileErr.Length > 1500 ? compileErr[..1500] : compileErr);
+            TestRunRing.IsActive = false;
+            TestRunRing.Visibility = Visibility.Collapsed;
+            TestSubtitleText.Text = "编译失败";
+            TestCompileError.Text = compileErr.Trim().Length > 0 ? compileErr.Trim() : "编译器返回了非零退出码";
+            TestCompileErrorBox.Visibility = Visibility.Visible;
             return;
         }
 
-        // 逐个样例运行
-        var results = new List<string>();
+        var results = new List<TestResultItem>();
         int passed = 0;
-        foreach (OjSample sample in _samples)
+        foreach (var testCase in cases)
         {
             var runPsi = new System.Diagnostics.ProcessStartInfo
             {
@@ -1136,27 +2049,88 @@ public sealed partial class PracticeView : UserControl
                 CreateNoWindow = true,
             };
             var run = System.Diagnostics.Process.Start(runPsi);
-            if (run is null) { results.Add($"❌ {sample.Title}: 无法启动程序"); continue; }
+            if (run is null)
+            {
+                results.Add(new TestResultItem
+                {
+                    Title = testCase.Title,
+                    Status = "无法启动",
+                    Outcome = TestOutcome.Failed,
+                });
+                continue;
+            }
 
-            await run.StandardInput.WriteAsync(sample.Input);
+            await run.StandardInput.WriteAsync(testCase.Input);
             run.StandardInput.Close();
             string output = (await run.StandardOutput.ReadToEndAsync()).Trim();
             string runErr = (await run.StandardError.ReadToEndAsync()).Trim();
             await run.WaitForExitAsync();
 
-            string expected = sample.Output.Trim();
-            bool ok = run.ExitCode == 0 && string.Equals(Normalize(output), Normalize(expected), StringComparison.Ordinal);
-            if (ok) passed++;
-            string status = ok ? "✅ 通过" : "❌ 错误";
-            string detail = ok
-                ? string.Empty
-                : $"\n  期望: {Truncate(expected)}\n  实际: {Truncate(output)}"
-                  + (runErr.Length > 0 ? $"\n  stderr: {Truncate(runErr)}" : string.Empty);
-            results.Add($"{status}  {sample.Title}{detail}");
+            if (!testCase.Check)
+            {
+                // 手动输入只展示运行结果，不做对错判定
+                bool ok = run.ExitCode == 0;
+                results.Add(new TestResultItem
+                {
+                    Title = testCase.Title,
+                    Status = ok ? "运行完成" : "运行错误",
+                    Outcome = ok ? TestOutcome.Info : TestOutcome.Failed,
+                    Detail = BuildTestDetail(testCase.Input, null, output, runErr, run.ExitCode),
+                });
+                continue;
+            }
+
+            string expected = testCase.Expected.Trim();
+            bool passedCase = run.ExitCode == 0
+                              && string.Equals(Normalize(output), Normalize(expected), StringComparison.Ordinal);
+            if (passedCase)
+            {
+                passed++;
+            }
+
+            results.Add(new TestResultItem
+            {
+                Title = testCase.Title,
+                Status = passedCase ? "通过" : (run.ExitCode != 0 ? "运行错误" : "答案错误"),
+                Outcome = passedCase ? TestOutcome.Passed : TestOutcome.Failed,
+                Detail = passedCase
+                    ? string.Empty
+                    : BuildTestDetail(testCase.Input, expected, output, runErr, run.ExitCode),
+            });
         }
 
-        string title = $"测试结果：{passed}/{_samples.Count} 通过";
-        await ShowSimpleDialogAsync(title, string.Join("\n\n", results));
+        TestResultList.ItemsSource = results;
+        TestRunRing.IsActive = false;
+        TestRunRing.Visibility = Visibility.Collapsed;
+        TestSubtitleText.Text = manual ? "运行完成" : $"{passed} / {cases.Count} 通过";
+    }
+
+    /// <summary>失败用例的详细信息：输入、期望输出、实际输出。</summary>
+    private static string BuildTestDetail(string input, string? expected, string actual, string error, int exitCode)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("输入");
+        builder.AppendLine(input.Trim().Length == 0 ? "（空）" : Truncate(input.Trim()));
+        if (expected is not null)
+        {
+            builder.AppendLine("期望输出");
+            builder.AppendLine(expected.Length == 0 ? "（空）" : Truncate(expected));
+        }
+
+        builder.AppendLine("实际输出");
+        builder.AppendLine(actual.Length == 0 ? "（空）" : Truncate(actual));
+
+        if (error.Length > 0)
+        {
+            builder.AppendLine("stderr");
+            builder.Append(Truncate(error));
+        }
+        else if (exitCode != 0)
+        {
+            builder.Append("（退出码 ").Append(exitCode.ToString(CultureInfo.InvariantCulture)).Append('）');
+        }
+
+        return builder.ToString().TrimEnd();
     }
 
     private static string Normalize(string s) =>
@@ -1194,6 +2168,8 @@ public sealed partial class PracticeView : UserControl
         LoginHintText.Text = "请粘贴到代码框后提交";
         LoginRing.IsActive = false;
         UpdateLoginOverlaySize();
+        // 先显示加载占位，等页面 NavigationCompleted 后再露出内容
+        LoginLoadingPanel.Visibility = Visibility.Visible;
         LoginWebView.CoreWebView2.Navigate(submitUrl);
         LoginOverlay.Visibility = Visibility.Visible;
     }
@@ -1367,6 +2343,8 @@ public sealed partial class PracticeView : UserControl
             LoginWebView.DefaultBackgroundColor = Microsoft.UI.Colors.Transparent;
             core.Settings.IsZoomControlEnabled = false;
             core.NewWindowRequested += (_, args) => args.Handled = true;
+            // 页面加载完成后才撤掉加载占位，避免用户看到 WebView 白屏/半加载过程
+            core.NavigationCompleted += (_, _) => LoginLoadingPanel.Visibility = Visibility.Collapsed;
             if (!string.IsNullOrEmpty(_config.UserAgent))
             {
                 core.Settings.UserAgent = _config.UserAgent;
@@ -1429,6 +2407,9 @@ public sealed partial class PracticeView : UserControl
 
                 _pendingProblemMessages.Clear();
                 break;
+            case "zoomStep":
+                ChangeUiZoom(message?["delta"]?.GetValue<int>() ?? 0);
+                break;
             case "openExternal": {
                 string url = message?["url"]?.ToString() ?? string.Empty;
                 if (Uri.TryCreate(url, UriKind.Absolute, out Uri? uri))
@@ -1467,7 +2448,13 @@ public sealed partial class PracticeView : UserControl
 
         if ((message?["type"]?.ToString() ?? string.Empty) == "code" && _codeTcs is not null)
         {
-            _codeTcs.TrySetResult(message["value"]?.ToString() ?? string.Empty);
+            _codeTcs.TrySetResult(message?["value"]?.ToString() ?? string.Empty);
+            return;
+        }
+
+        if ((message?["type"]?.ToString() ?? string.Empty) == "zoomStep")
+        {
+            ChangeUiZoom(message?["delta"]?.GetValue<int>() ?? 0);
         }
     }
 
@@ -1541,4 +2528,13 @@ public sealed partial class PracticeView : UserControl
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
+
+    /// <summary>题目详情面板是从哪里打开的，用于返回时回到对应列表。</summary>
+    private enum ProblemOrigin
+    {
+        Home,
+        Results,
+        Starred,
+        Training,
+    }
 }

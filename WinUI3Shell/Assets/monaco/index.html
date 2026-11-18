@@ -140,6 +140,28 @@
   .mny-sem-function { color: var(--vh-function) !important; }
   .mny-sem-variable { color: var(--vh-variable) !important; }
 
+  /* 调试：行号左侧的红点断点 + 当前执行行高亮 */
+  /* 注意：装饰元素由 Monaco 自己用 inline top 定位，这里不能再写 position/top/left */
+  .mny-breakpoint {
+    width: 10px;
+    height: 10px;
+    margin-left: 5px;
+    margin-top: 4px;
+    border-radius: 50%;
+    background: #e51400;
+    cursor: pointer;
+  }
+  .mny-debug-line { background: rgba(255, 196, 0, 0.20); }
+  .mny-debug-line-glyph {
+    width: 0;
+    height: 0;
+    margin-left: 6px;
+    margin-top: 5px;
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+    border-left: 8px solid #e5a000;
+  }
+
   /* ---- 终端面板（仿 VS Code 底部面板） ---- */
   #panel {
     flex: 0 0 auto; height: 220px; display: flex; flex-direction: column;

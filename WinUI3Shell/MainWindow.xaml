@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿﻿<?xml version="1.0" encoding="utf-8"?>
 <Window
     x:Class="WinUI3Shell.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -12,6 +12,11 @@
             <KeyboardAccelerator Key="F12" Invoked="Shortcut_Invoked" />
             <KeyboardAccelerator Key="F11" Invoked="Shortcut_Invoked" />
             <KeyboardAccelerator Key="F10" Invoked="Shortcut_Invoked" />
+            <!-- 调试快捷键：F5 开始/继续、Shift+F5 停止、F7 单步跳过、F8 单步进入 -->
+            <KeyboardAccelerator Key="F5" Invoked="Shortcut_Invoked" />
+            <KeyboardAccelerator Key="F5" Modifiers="Shift" Invoked="Shortcut_Invoked" />
+            <KeyboardAccelerator Key="F7" Invoked="Shortcut_Invoked" />
+            <KeyboardAccelerator Key="F8" Invoked="Shortcut_Invoked" />
             <KeyboardAccelerator Key="N" Modifiers="Control" Invoked="Shortcut_Invoked" />
             <KeyboardAccelerator Key="O" Modifiers="Control" Invoked="Shortcut_Invoked" />
             <KeyboardAccelerator Key="S" Modifiers="Control" Invoked="Shortcut_Invoked" />
@@ -241,6 +246,11 @@
                             <MenuFlyoutItem Text="运行" Tag="cmd:run" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="F10" />
                             <MenuFlyoutItem Text="编译与运行" Tag="cmd:buildRun" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="F11" />
                             <MenuFlyoutSeparator />
+                            <MenuFlyoutItem Text="开始调试" Tag="cmd:debugStart" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="F5" />
+                            <MenuFlyoutItem Text="停止调试" Tag="cmd:debugStop" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Shift+F5" />
+                            <MenuFlyoutItem Text="单步跳过" Tag="cmd:debugStepOver" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="F7" />
+                            <MenuFlyoutItem Text="单步进入" Tag="cmd:debugStepInto" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="F8" />
+                            <MenuFlyoutSeparator />
                             <MenuFlyoutItem Text="打开终端" Tag="cmd:toggleTerminal" Click="MenuCommand_Click" KeyboardAcceleratorTextOverride="Ctrl+`" />
                         </MenuFlyout>
                     </DropDownButton.Flyout>
@@ -248,7 +258,7 @@
             </StackPanel>
         </Grid>
 
-        <!-- 左侧活动栏（五个按钮）+ 可收起侧栏 + 编辑器 -->
+        <!-- 左侧活动栏（四个栏目）+ 可收起侧栏 + 编辑器 -->
         <Grid x:Name="MainContentArea" Grid.Row="2">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="48" />
@@ -267,36 +277,36 @@
                     Tag="explorer"
                     Style="{StaticResource ActivityBarButtonStyle}"
                     Click="ActivityButton_Click"
-                    AutomationProperties.Name="资源管理器"
-                    ToolTipService.ToolTip="资源管理器">
+                    AutomationProperties.Name="文件管理器"
+                    ToolTipService.ToolTip="文件管理器">
                     <FontIcon Glyph="&#xE8B7;" FontSize="18" />
                 </Button>
                 <Button
-                    x:Name="SearchButton"
-                    Tag="search"
+                    x:Name="CheckerButton"
+                    Tag="checker"
                     Style="{StaticResource ActivityBarButtonStyle}"
                     Click="ActivityButton_Click"
-                    AutomationProperties.Name="搜索"
-                    ToolTipService.ToolTip="搜索">
-                    <FontIcon Glyph="&#xE721;" FontSize="18" />
+                    AutomationProperties.Name="代码检查器"
+                    ToolTipService.ToolTip="代码检查器">
+                    <FontIcon Glyph="&#xE9D5;" FontSize="18" />
                 </Button>
                 <Button
-                    x:Name="SourceControlButton"
-                    Tag="scm"
+                    x:Name="OutlineButton"
+                    Tag="outline"
                     Style="{StaticResource ActivityBarButtonStyle}"
                     Click="ActivityButton_Click"
-                    AutomationProperties.Name="源代码管理"
-                    ToolTipService.ToolTip="源代码管理">
-                    <FontIcon Glyph="&#xE8C8;" FontSize="18" />
+                    AutomationProperties.Name="代码大纲"
+                    ToolTipService.ToolTip="代码大纲">
+                    <FontIcon Glyph="&#xE8FD;" FontSize="18" />
                 </Button>
                 <Button
-                    x:Name="RunButton"
-                    Tag="run"
+                    x:Name="DebugButton"
+                    Tag="debug"
                     Style="{StaticResource ActivityBarButtonStyle}"
                     Click="ActivityButton_Click"
-                    AutomationProperties.Name="运行和调试"
-                    ToolTipService.ToolTip="运行和调试">
-                    <FontIcon Glyph="&#xE768;" FontSize="18" />
+                    AutomationProperties.Name="调试"
+                    ToolTipService.ToolTip="调试">
+                    <FontIcon Glyph="&#xEBE8;" FontSize="18" />
                 </Button>
             </StackPanel>
 
@@ -347,16 +357,195 @@
                     </TreeView>
                 </Grid>
 
-                <Grid x:Name="PlaceholderPanel" Visibility="Collapsed">
+                <!-- 代码检查器：点击栏目自动检查当前文件，列表点击跳转 -->
+                <Grid x:Name="CheckerPanel" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
                     <TextBlock
-                        x:Name="PlaceholderText"
-                        Margin="16,12,16,16"
+                        Grid.Row="0"
+                        Margin="12,10,12,0"
+                        FontSize="12"
+                        FontWeight="SemiBold"
+                        Text="代码检查器" />
+                    <StackPanel
+                        Grid.Row="1"
+                        Margin="8,6,8,6"
+                        Orientation="Horizontal"
+                        Spacing="8">
+                        <Button
+                            Padding="10,3"
+                            FontSize="12"
+                            Content="重新检查"
+                            Click="RecheckButton_Click" />
+                        <TextBlock
+                            x:Name="CheckerStatusText"
+                            VerticalAlignment="Center"
+                            FontSize="11"
+                            Opacity="0.65"
+                            TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                    <ListView
+                        x:Name="DiagnosticsList"
+                        Grid.Row="2"
+                        IsItemClickEnabled="True"
+                        ItemClick="DiagnosticsList_ItemClick"
+                        SelectionMode="None">
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel
+                                    Orientation="Horizontal"
+                                    Spacing="8"
+                                    Margin="0,2,0,2">
+                                    <FontIcon
+                                        Glyph="{Binding Glyph}"
+                                        Foreground="{Binding Brush}"
+                                        FontSize="13"
+                                        VerticalAlignment="Top"
+                                        Margin="0,2,0,0" />
+                                    <StackPanel MaxWidth="170">
+                                        <TextBlock
+                                            Text="{Binding Message}"
+                                            FontSize="12"
+                                            TextWrapping="Wrap" />
+                                        <TextBlock
+                                            Text="{Binding Location}"
+                                            FontSize="11"
+                                            Opacity="0.6" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                    <TextBlock
+                        x:Name="CheckerEmptyText"
+                        Grid.Row="2"
+                        Margin="12,8,12,12"
+                        VerticalAlignment="Top"
+                        FontSize="11"
+                        Opacity="0.6"
                         TextWrapping="Wrap"
-                        Opacity="0.6" />
+                        Text="打开一个 C/C++ 文件后点击左上角检查图标。" />
+                </Grid>
+
+                <!-- 代码大纲：当前文件的符号树 -->
+                <Grid x:Name="OutlinePanel" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock
+                        Grid.Row="0"
+                        Margin="12,10,12,6"
+                        FontSize="12"
+                        FontWeight="SemiBold"
+                        Text="代码大纲" />
+                    <TreeView
+                        x:Name="OutlineTree"
+                        Grid.Row="1"
+                        SelectionMode="Single"
+                        ItemInvoked="OutlineTree_ItemInvoked">
+                        <TreeView.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel
+                                    Orientation="Horizontal"
+                                    Spacing="8"
+                                    ToolTipService.ToolTip="{Binding Content.Detail}">
+                                    <FontIcon Glyph="{Binding Content.Glyph}" FontSize="13" />
+                                    <TextBlock
+                                        Text="{Binding Content.Name}"
+                                        VerticalAlignment="Center"
+                                        TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </TreeView.ItemTemplate>
+                    </TreeView>
+                    <TextBlock
+                        x:Name="OutlineEmptyText"
+                        Grid.Row="1"
+                        Margin="12,8,12,12"
+                        VerticalAlignment="Top"
+                        FontSize="11"
+                        Opacity="0.6"
+                        TextWrapping="Wrap"
+                        Visibility="Collapsed"
+                        Text="当前文件没有可显示的符号。" />
+                </Grid>
+
+                <!-- 调试：左侧栏只放监视，控制/局部变量/调用栈在编辑器上的浮窗里 -->
+                <Grid x:Name="DebugPanel" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock
+                        Grid.Row="0"
+                        Margin="12,10,12,2"
+                        FontSize="12"
+                        FontWeight="SemiBold"
+                        Text="调试" />
+
+                    <TextBlock
+                        x:Name="DebugStatusText"
+                        Grid.Row="1"
+                        Margin="12,0,12,6"
+                        FontSize="11"
+                        Opacity="0.7"
+                        TextWrapping="Wrap"
+                        Text="未启动" />
+
+                    <TextBlock
+                        Grid.Row="2"
+                        Margin="12,0,12,2"
+                        FontSize="11"
+                        FontWeight="SemiBold"
+                        Opacity="0.8"
+                        Text="监视" />
+
+                    <TextBox
+                        x:Name="DebugWatchInput"
+                        Grid.Row="3"
+                        Margin="8,0,8,4"
+                        FontSize="11"
+                        PlaceholderText="输入表达式后回车"
+                        KeyDown="DebugWatchInput_KeyDown" />
+
+                    <ListView
+                        x:Name="DebugWatchList"
+                        Grid.Row="4"
+                        SelectionMode="None">
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,1,0,1" ColumnDefinitions="Auto,*">
+                                    <TextBlock
+                                        Grid.Column="0"
+                                        FontSize="11"
+                                        FontFamily="Cascadia Mono, Consolas, monospace"
+                                        Text="{Binding Name}"
+                                        TextTrimming="CharacterEllipsis"
+                                        MaxWidth="100" />
+                                    <TextBlock
+                                        Grid.Column="1"
+                                        Margin="8,0,0,0"
+                                        FontSize="11"
+                                        FontFamily="Cascadia Mono, Consolas, monospace"
+                                        Opacity="0.75"
+                                        Text="{Binding Value}"
+                                        TextTrimming="CharacterEllipsis" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
                 </Grid>
             </Grid>
 
-            <Grid Grid.Column="2" Padding="8,0,0,0">
+            <Grid x:Name="EditorHostGrid" Grid.Column="2" Padding="8,0,0,0">
                 <!-- 整个编程界面（标签栏 + 编辑器 + 终端）做成一张圆角卡片 -->
                 <Border
                     Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
@@ -372,13 +561,19 @@
                     Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
                     CornerRadius="12"
                     Visibility="Collapsed">
-                    <StackPanel
-                        x:Name="WelcomeContent"
-                        MaxWidth="420"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center"
-                        Spacing="10"
-                        Opacity="0">
+                    <ScrollViewer
+                        x:Name="WelcomeScroll"
+                        Padding="24"
+                        HorizontalScrollBarVisibility="Disabled"
+                        VerticalScrollBarVisibility="Auto">
+                        <Grid MinHeight="{x:Bind WelcomeScroll.ActualHeight, Mode=OneWay}">
+                        <StackPanel
+                            x:Name="WelcomeContent"
+                            MaxWidth="420"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Spacing="10"
+                            Opacity="0">
                         <StackPanel.RenderTransform>
                             <CompositeTransform x:Name="WelcomeTransform" TranslateY="12" />
                         </StackPanel.RenderTransform>
@@ -424,8 +619,11 @@
                                 <TextBlock Text="设置" VerticalAlignment="Center" />
                             </StackPanel>
                         </Button>
-                    </StackPanel>
+                        </StackPanel>
+                        </Grid>
+                    </ScrollViewer>
                 </Border>
+
             </Grid>
         </Grid>
 

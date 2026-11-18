@@ -116,6 +116,8 @@ require(['vs/editor/editor.main'], function () {
     fontLigatures: settings.fontLigatures,
     wordWrap: settings.wordWrap,
     minimap: { enabled: settings.minimap },
+    // 行号左侧留出装订区，用来显示断点红点
+    glyphMargin: true,
     renderWhitespace: settings.whitespace,
     cursorStyle: settings.cursorStyle,
     cursorBlinking: settings.cursorBlinking,
@@ -730,6 +732,7 @@ require(['vs/editor/editor.main'], function () {
 
   editor.onDidChangeModelContent(function () {
     scheduleCppSemantics();
+    scheduleOutline();
   });
 
   function post(message) {
@@ -929,6 +932,8 @@ require(['vs/editor/editor.main'], function () {
     activeId = id;
     const tab = activeTab();
     applyFileMode(tab);
+    // 切换标签后刷新代码大纲（如果大纲栏目正打开着）
+    scheduleOutline();
     // 切换标签后重新做一遍语义着色（语法包可能刚加载，所以留一点延迟）
     scheduleCppSemantics(120);
 
@@ -1217,15 +1222,36 @@ require(['vs/editor/editor.main'], function () {
       if (candidate.path === path) { tab = candidate; break; }
     }
     if (!tab) { return; }
+    const wasUnsaved = !tab.path;
     tab.path = path;
     tab.name = name;
     tab.dirty = false;
     renderTabs();
     notifyTabs();
 
+    // 未保存时点的断点之前没有路径，保存后补登记
+    const savedBreakpoints = breakpointLines.get(tab.model.id);
+    if (wasUnsaved && savedBreakpoints) {
+      savedBreakpoints.forEach(function (line) {
+        post({ type: 'breakpointToggle', path: tab.path, line: line, enabled: true });
+      });
+    }
+
     // 批量保存中：继续保存下一个脏标签
     if (saveAllQueue !== null) {
       processSaveAllNext();
+      return;
+    }
+
+    // 保存完成后继续之前被拦截的检查/调试请求
+    if (pendingFileAction) {
+      const action = pendingFileAction;
+      pendingFileAction = null;
+      post({
+        type: action === 'check' ? 'checkRequest' : 'debugStartRequest',
+        path: tab.path,
+        name: tab.name
+      });
       return;
     }
 
@@ -1334,8 +1360,325 @@ require(['vs/editor/editor.main'], function () {
       case 'build': requestBuild('compile'); break;
       case 'run': requestBuild('run'); break;
       case 'buildRun': requestBuild('buildRun'); break;
+      case 'check': requestFileAction('check'); break;
+      case 'debugStart': requestFileAction('debugStart'); break;
       case 'saveAll': saveAll(); break;
     }
+  }
+
+  /* ---------- 调试：断点 / 当前执行行 ---------- */
+
+  const breakpointLines = new Map();          // modelId -> Set<line>
+  const breakpointDecorationIds = new Map();  // modelId -> decoration ids
+
+  function modelForPath(path) {
+    if (!path) { return editor.getModel(); }
+    for (const tab of tabs) {
+      if (tab.path === path) { return tab.model; }
+    }
+    return null;
+  }
+
+  function renderBreakpoints(model) {
+    if (!model || model.isDisposed()) { return; }
+    const lines = breakpointLines.get(model.id);
+    const decorations = [];
+    if (lines) {
+      lines.forEach(function (line) {
+        decorations.push({
+          range: new monaco.Range(line, 1, line, 1),
+          options: { glyphMarginClassName: 'mny-breakpoint' }
+        });
+      });
+    }
+    const previous = breakpointDecorationIds.get(model.id) || [];
+    breakpointDecorationIds.set(model.id, model.deltaDecorations(previous, decorations));
+  }
+
+  function toggleBreakpoint(model, line) {
+    if (!model || !line) { return; }
+    let lines = breakpointLines.get(model.id);
+    if (!lines) { lines = new Set(); breakpointLines.set(model.id, lines); }
+    let enabled;
+    if (lines.has(line)) { lines.delete(line); enabled = false; }
+    else { lines.add(line); enabled = true; }
+    renderBreakpoints(model);
+
+    const tab = tabs.find(function (t) { return t.model === model; });
+    post({ type: 'breakpointToggle', path: tab ? tab.path : null, line: line, enabled: enabled });
+  }
+
+  /* 宿主打开文件时回传该文件已有的断点 */
+  function applyBreakpointList(path, lines) {
+    const model = modelForPath(path);
+    if (!model) { return; }
+    breakpointLines.set(model.id, new Set(lines || []));
+    renderBreakpoints(model);
+  }
+
+  editor.onMouseDown(function (e) {
+    const type = e.target && e.target.type;
+    if (type !== monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) { return; }
+    const line = (e.target.position && e.target.position.lineNumber) ||
+      (e.target.range && e.target.range.startLineNumber);
+    if (line) { toggleBreakpoint(editor.getModel(), line); }
+  });
+
+  let debugLineModel = null;
+  let debugLineIds = [];
+
+  function clearDebugLine() {
+    if (debugLineModel && !debugLineModel.isDisposed()) {
+      debugLineModel.deltaDecorations(debugLineIds, []);
+    }
+    debugLineModel = null;
+    debugLineIds = [];
+  }
+
+  function showDebugLine(path, line) {
+    clearDebugLine();
+    const model = modelForPath(path);
+    if (!model || !line) { return; }
+    debugLineModel = model;
+    debugLineIds = model.deltaDecorations([], [{
+      range: new monaco.Range(line, 1, line, 1),
+      options: {
+        isWholeLine: true,
+        className: 'mny-debug-line',
+        glyphMarginClassName: 'mny-debug-line-glyph'
+      }
+    }]);
+    if (editor.getModel() === model) {
+      editor.revealLineInCenterIfOutsideViewport(line);
+    }
+  }
+
+  /* ---------- 代码检查器：诊断波浪线 ---------- */
+
+  const CHECK_OWNER = 'mny-check';
+
+  function clearDiagnostics(path) {
+    const model = modelForPath(path);
+    if (model) { monaco.editor.setModelMarkers(model, CHECK_OWNER, []); }
+  }
+
+  function applyDiagnostics(path, items) {
+    const model = modelForPath(path);
+    if (!model) { return; }
+    const markers = (items || []).map(function (item) {
+      const line = Math.max(1, item.line || 1);
+      const column = Math.max(1, item.column || 1);
+      return {
+        severity: item.severity === 'warning' ? monaco.MarkerSeverity.Warning : monaco.MarkerSeverity.Error,
+        message: item.message || '',
+        startLineNumber: line,
+        startColumn: column,
+        endLineNumber: item.endLine || line,
+        endColumn: item.endColumn || column + 1
+      };
+    });
+    monaco.editor.setModelMarkers(model, CHECK_OWNER, markers);
+  }
+
+  function revealPosition(line, column) {
+    const model = editor.getModel();
+    if (!model || !line) { return; }
+    const target = {
+      lineNumber: Math.min(model.getLineCount(), Math.max(1, line)),
+      column: Math.max(1, column || 1)
+    };
+    editor.setPosition(target);
+    editor.revealPositionInCenter(target);
+    editor.focus();
+  }
+
+  /* ---------- 检查 / 调试：确保文件已保存后再请求宿主 ---------- */
+
+  let pendingFileAction = null;
+
+  function requestFileAction(kind) {
+    const tab = activeTab();
+    if (!tab) {
+      // 没有打开文件时交给宿主在面板里提示，不弹对话框打断输入
+      post({
+        type: kind === 'check' ? 'checkRequest' : 'debugStartRequest',
+        path: '',
+        name: null
+      });
+      return;
+    }
+    if (!tab.path || tab.dirty) {
+      pendingFileAction = kind;
+      requestSave(false);
+      return;
+    }
+    post({
+      type: kind === 'check' ? 'checkRequest' : 'debugStartRequest',
+      path: tab.path,
+      name: tab.name
+    });
+  }
+
+  /* ---------- 代码大纲 ---------- */
+
+  let outlineWanted = false;
+  let outlineTimer = null;
+
+  function requestOutline() {
+    outlineWanted = true;
+    sendOutline();
+  }
+
+  function stopOutline() {
+    outlineWanted = false;
+    if (outlineTimer) { clearTimeout(outlineTimer); outlineTimer = null; }
+  }
+
+  function sendOutline() {
+    const model = editor.getModel();
+    if (!model) {
+      post({ type: 'outline', path: null, name: null, symbols: [] });
+      return;
+    }
+    const tab = activeTab();
+    let symbols = [];
+    try { symbols = collectOutlineSymbols(model.getValue()); } catch (e) { symbols = []; }
+    post({
+      type: 'outline',
+      path: tab ? tab.path : null,
+      name: tab ? tab.name : null,
+      symbols: symbols
+    });
+  }
+
+  function scheduleOutline() {
+    if (!outlineWanted) { return; }
+    if (outlineTimer) { clearTimeout(outlineTimer); }
+    outlineTimer = setTimeout(sendOutline, 400);
+  }
+
+  const OUTLINE_MAX_CHARS = 200000;
+  const OUTLINE_CONTROL_WORDS = new Set([
+    'if', 'for', 'while', 'switch', 'catch', 'return', 'else', 'do', 'sizeof',
+    'new', 'delete', 'throw', 'case', 'default'
+  ]);
+
+  /* 把注释和字符串替换成空格，长度和换行保持不变，方便按行统计花括号层级 */
+  function stripCommentsAndStrings(text) {
+    const chars = text.split('');
+    let i = 0;
+    while (i < chars.length) {
+      const c = chars[i];
+      if (c === '/' && chars[i + 1] === '/') {
+        while (i < chars.length && chars[i] !== '\n') { chars[i] = ' '; i += 1; }
+      } else if (c === '/' && chars[i + 1] === '*') {
+        chars[i] = ' '; chars[i + 1] = ' '; i += 2;
+        while (i < chars.length && !(chars[i] === '*' && chars[i + 1] === '/')) {
+          if (chars[i] !== '\n') { chars[i] = ' '; }
+          i += 1;
+        }
+        if (i < chars.length) { chars[i] = ' '; chars[i + 1] = ' '; i += 2; }
+      } else if (c === '"' || c === "'") {
+        const quote = c;
+        chars[i] = ' '; i += 1;
+        while (i < chars.length && chars[i] !== quote) {
+          if (chars[i] === '\\') {
+            chars[i] = ' '; i += 1;
+            if (i < chars.length) { chars[i] = ' '; i += 1; }
+            continue;
+          }
+          if (chars[i] !== '\n') { chars[i] = ' '; }
+          i += 1;
+        }
+        if (i < chars.length) { chars[i] = ' '; i += 1; }
+      } else {
+        i += 1;
+      }
+    }
+    return chars.join('');
+  }
+
+  /* 轻量 C/C++ 大纲：命名空间 / 类 / 结构体 / 联合体 / 枚举 / 函数 / 宏 */
+  function collectOutlineSymbols(text) {
+    if (!text) { return []; }
+    const source = text.length > OUTLINE_MAX_CHARS ? text.slice(0, OUTLINE_MAX_CHARS) : text;
+    const lines = source.split('\n');
+    const cleanLines = stripCommentsAndStrings(source).split('\n');
+    const root = { name: '', kind: 'root', line: 0, column: 1, children: [] };
+    const stack = [{ node: root, depth: -1 }];
+    const typeNames = new Set();
+    let depth = 0;
+
+    // 当前是否在类/结构体内部（用于识别只有声明、没有函数体的成员函数）
+    function insideType() {
+      for (let s = stack.length - 1; s >= 1; s -= 1) {
+        const kind = stack[s].node.kind;
+        if (kind === 'class' || kind === 'struct' || kind === 'union') { return true; }
+        if (kind === 'namespace') { return false; }
+      }
+      return false;
+    }
+
+    for (let i = 0; i < lines.length; i += 1) {
+      const raw = lines[i];
+      const trimmed = raw.trim();
+      let found = null;
+
+      if (trimmed.indexOf('#') === 0) {
+        const defineMatch = /^#\s*define\s+([A-Za-z_]\w*)/.exec(trimmed);
+        if (defineMatch) { found = { kind: 'macro', name: defineMatch[1] }; }
+      } else if (trimmed.length > 0) {
+        let match = /^\s*namespace\s+([A-Za-z_][\w:]*)/.exec(raw);
+        if (match) {
+          found = { kind: 'namespace', name: match[1] };
+        }
+        if (!found) {
+          match = /^\s*(?:typedef\s+)?(class|struct|union|enum(?:\s+class)?)\s+([A-Za-z_]\w*)/.exec(raw);
+          if (match) {
+            found = { kind: match[1].split(' ')[0], name: match[2] };
+            typeNames.add(match[2]);
+          }
+        }
+        if (!found) {
+          match = /^\s*([A-Za-z_~][\w:<>,\s\*&]*?)\s+([A-Za-z_]\w*(?:::\w+)*)\s*\(([^;{}]*)\)\s*(?:const\s*)?(?:[;{]|$)/.exec(raw);
+          if (match) {
+            const returnType = match[1].trim();
+            const name = match[2];
+            const declarationOnly = trimmed.endsWith(';') && !insideType();
+            if (returnType && !declarationOnly &&
+                !OUTLINE_CONTROL_WORDS.has(name) &&
+                returnType.indexOf('=') < 0 &&
+                !/\b(if|for|while|switch|catch|return)\b/.test(returnType)) {
+              found = { kind: 'function', name: name };
+            }
+          }
+          if (!found && insideType()) {
+            const ctor = /^\s*([A-Za-z_]\w*)\s*\(([^;{}]*)\)\s*(?::[^{;]*)?(?:[;{]|$)/.exec(raw);
+            if (ctor && typeNames.has(ctor[1])) {
+              found = { kind: 'function', name: ctor[1] };
+            }
+          }
+        }
+      }
+
+      if (found) {
+        while (stack.length > 1 && stack[stack.length - 1].depth >= depth) { stack.pop(); }
+        const parent = stack[stack.length - 1].node;
+        found.line = i + 1;
+        found.column = Math.max(1, raw.search(/\S/) + 1);
+        found.children = [];
+        parent.children.push(found);
+        stack.push({ node: found, depth: depth });
+      }
+
+      const cleanLine = cleanLines[i] || '';
+      for (let k = 0; k < cleanLine.length; k += 1) {
+        if (cleanLine[k] === '{') { depth += 1; }
+        else if (cleanLine[k] === '}') { depth = Math.max(0, depth - 1); }
+      }
+    }
+
+    return root.children;
   }
 
   /* ---------- 终端面板 ---------- */
@@ -1555,6 +1898,14 @@ require(['vs/editor/editor.main'], function () {
         case 'terminalNote': terminalNote(msg.text); break;
         case 'terminalStdout': terminalStdout(msg.text); break;
         case 'settings': applyHostSettings(msg); break;
+        case 'requestOutline': requestOutline(); break;
+        case 'stopOutline': stopOutline(); break;
+        case 'reveal': revealPosition(msg.line, msg.column); break;
+        case 'diagnostics': applyDiagnostics(msg.path, msg.items); break;
+        case 'clearDiagnostics': clearDiagnostics(msg.path); break;
+        case 'debugLine': showDebugLine(msg.path, msg.line); break;
+        case 'debugLineClear': clearDebugLine(); break;
+        case 'breakpoints': applyBreakpointList(msg.path, msg.lines); break;
       }
     });
   }
@@ -1622,6 +1973,23 @@ require(['vs/editor/editor.main'], function () {
   /* 编辑器内的快捷键：Ctrl+N 新建、Ctrl+S 保存、Ctrl+Shift+S 另存为、Ctrl+W 关闭
      F12 编译、F10 运行、F11 编译并运行 */
   document.addEventListener('keydown', function (e) {
+    // 调试快捷键：F5 开始/继续、Shift+F5 停止、F7 单步跳过、F8 单步进入
+    if (!e.ctrlKey && !e.altKey) {
+      const debugKey = e.key.toLowerCase();
+      if (debugKey === 'f5') {
+        e.preventDefault();
+        e.stopPropagation();
+        post({ type: e.shiftKey ? 'debugStop' : 'debugContinue' });
+        return;
+      }
+      if (!e.shiftKey && (debugKey === 'f7' || debugKey === 'f8')) {
+        e.preventDefault();
+        e.stopPropagation();
+        post({ type: debugKey === 'f7' ? 'debugStepOver' : 'debugStepInto' });
+        return;
+      }
+    }
+
     if (!e.ctrlKey && !e.altKey && !e.shiftKey) {
       const buildKey = e.key.toLowerCase();
       if (buildKey === 'f12' || buildKey === 'f10' || buildKey === 'f11') {

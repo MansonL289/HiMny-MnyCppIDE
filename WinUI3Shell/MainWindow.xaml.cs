@@ -1,12 +1,14 @@
-using System;
+﻿﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
@@ -58,9 +60,14 @@ public sealed partial class MainWindow : Window
         Title = "MnyC++ IDE";
         SystemBackdrop = new MicaBackdrop();
 
-        // 窗口：屏幕工作区的 2/3 大小并居中
+        // 窗口：屏幕工作区的 2/3 并居中；按 DPI 换算成逻辑尺寸并保底，
+        // 避免高分屏笔记本上 2/3 物理像素太小、界面挤成一团
         var workArea = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
-        int winW = workArea.Width * 2 / 3, winH = workArea.Height * 2 / 3;
+        double scale = GetDisplayScale();
+        int logicalW = Math.Max(1, (int)(workArea.Width / scale));
+        int logicalH = Math.Max(1, (int)(workArea.Height / scale));
+        int winW = (int)(Math.Min(Math.Max(logicalW * 2 / 3, 900), logicalW) * scale);
+        int winH = (int)(Math.Min(Math.Max(logicalH * 2 / 3, 600), logicalH) * scale);
         AppWindow.Resize(new SizeInt32(winW, winH));
         AppWindow.Move(new PointInt32(
             workArea.X + (workArea.Width - winW) / 2,
@@ -100,8 +107,35 @@ public sealed partial class MainWindow : Window
 
         // 窗口关闭时清理所有终端进程；若有未保存文件先弹确认框
         AppWindow.Closing += AppWindow_Closing;
-        Closed += (_, _) => KillAllTerminals();
+        Closed += (_, _) =>
+        {
+            StopDebug();
+            _debugWindow?.CloseForShutdown();
+            KillAllTerminals();
+        };
     }
+
+    /// <summary>当前窗口所在显示器的缩放比例（DPI / 96），用于把物理像素换算成逻辑尺寸。</summary>
+    private double GetDisplayScale()
+    {
+        try
+        {
+            uint dpi = GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this));
+            if (dpi > 0)
+            {
+                return dpi / 96.0;
+            }
+        }
+        catch (Exception)
+        {
+            // 取不到 DPI 时按 100% 处理
+        }
+
+        return 1.0;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr hwnd);
 
     /// <summary>
     /// 窗口关闭拦截：有未保存文件时取消关闭并弹确认框。
@@ -189,7 +223,7 @@ public sealed partial class MainWindow : Window
                 _ = PickAndOpenFileAsync();
                 break;
             case "w:newFile":
-                SendCommand("newUntitled");
+                _ = NewUntitledAsync();
                 break;
             case "w:settings":
                 ShowSettings();
@@ -320,7 +354,12 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            await ShowMessageAsync("编辑器初始化失败", ex.Message);
+            await ShowMessageAsync(
+                "编辑器初始化失败",
+                "编辑器（WebView2）没有加载成功。\n\n"
+                + "最常见的原因是系统缺少 Microsoft Edge WebView2 运行时，安装后重启本程序即可。\n\n"
+                + DescribeWebView2() + "\n\n"
+                + "详细信息：" + ex.Message);
         }
     }
 
@@ -395,6 +434,35 @@ public sealed partial class MainWindow : Window
             case "autoSave":
                 _ = HandleAutoSaveAsync(message);
                 break;
+            case "checkRequest":
+                _ = CheckFileAsync(
+                    message["path"]?.GetValue<string>() ?? string.Empty,
+                    message["name"]?.GetValue<string>());
+                break;
+            case "outline":
+                ApplyOutline(message);
+                break;
+            case "breakpointToggle":
+                HandleBreakpointToggle(
+                    message["path"]?.GetValue<string>(),
+                    message["line"]?.GetValue<int>() ?? 0,
+                    message["enabled"]?.GetValue<bool>() ?? false);
+                break;
+            case "debugStartRequest":
+                _ = StartDebugAsync(message["path"]?.GetValue<string>() ?? string.Empty);
+                break;
+            case "debugContinue":
+                _ = ContinueDebugAsync();
+                break;
+            case "debugStop":
+                StopDebug();
+                break;
+            case "debugStepOver":
+                _ = StepOverDebugAsync();
+                break;
+            case "debugStepInto":
+                _ = StepIntoDebugAsync();
+                break;
             case "saveAllDone": {
                 bool cancelled = message["cancelled"]?.GetValue<bool>() ?? false;
                 if (!cancelled)
@@ -447,6 +515,53 @@ public sealed partial class MainWindow : Window
     }
 
     private void SendCommand(string name) => SendToEditor(new { type = "command", name });
+
+    private async Task NewUntitledAsync()
+    {
+        if (!await EnsureEditorReadyAsync())
+        {
+            return;
+        }
+
+        SendCommand("newUntitled");
+    }
+
+    /// <summary>
+    /// 编辑器页面就绪前，新建/打开文件等操作发给 WebView2 只会排队，用户看到的就是“点了没反应”。
+    /// 这里先等一小段时间；仍然没就绪就明确说明原因（最常见是缺少 WebView2 运行时）。
+    /// </summary>
+    private async Task<bool> EnsureEditorReadyAsync()
+    {
+        for (int i = 0; i < 40 && !_editorReady; i++)
+        {
+            await Task.Delay(100);
+        }
+
+        if (_editorReady)
+        {
+            return true;
+        }
+
+        await ShowMessageAsync(
+            "编辑器未就绪",
+            "编辑器页面还没有加载完成，所以新建/打开文件暂时没有反应。\n\n"
+            + "如果一直如此，通常是系统缺少 Microsoft Edge WebView2 运行时，"
+            + "安装后重启本程序即可。\n\n"
+            + DescribeWebView2());
+        return false;
+    }
+
+    private static string DescribeWebView2()
+    {
+        try
+        {
+            return "当前 WebView2 运行时版本：" + CoreWebView2Environment.GetAvailableBrowserVersionString();
+        }
+        catch (Exception ex)
+        {
+            return "且未检测到 WebView2 运行时：" + ex.Message;
+        }
+    }
 
     private void RunEditorAction(string id) => SendToEditor(new { type = "action", id });
 
@@ -530,11 +645,13 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private Task RunCommandAsync(string command)
+    private async Task RunCommandAsync(string command)
     {
         switch (command)
         {
             case "newUntitled":
+                await NewUntitledAsync();
+                return;
             case "closeActive":
             case "requestSave":
             case "saveAs":
@@ -551,20 +668,39 @@ public sealed partial class MainWindow : Window
             case "build":
             case "run":
             case "buildRun":
+            case "check":
+            case "debugStart":
                 SendCommand(command);
-                return Task.CompletedTask;
+                return;
+            case "debugContinue":
+                await ContinueDebugAsync();
+                return;
+            case "debugStop":
+                StopDebug();
+                return;
+            case "debugStepOver":
+                await StepOverDebugAsync();
+                return;
+            case "debugStepInto":
+                await StepIntoDebugAsync();
+                return;
+            case "debugStepOut":
+                await StepOutDebugAsync();
+                return;
             case "openFile":
-                return PickAndOpenFileAsync();
+                await PickAndOpenFileAsync();
+                return;
             case "openFolder":
-                return PickAndOpenFolderAsync();
+                await PickAndOpenFolderAsync();
+                return;
             case "practice":
                 ShowPractice();
-                return Task.CompletedTask;
+                return;
             case "exit":
                 Close();
-                return Task.CompletedTask;
+                return;
             default:
-                return Task.CompletedTask;
+                return;
         }
     }
 
@@ -572,6 +708,11 @@ public sealed partial class MainWindow : Window
 
     private async Task PickAndOpenFileAsync()
     {
+        if (!await EnsureEditorReadyAsync())
+        {
+            return;
+        }
+
         try
         {
             string? path = NativeFileDialog.PickFile(WindowHandle, "打开文件");
@@ -633,6 +774,12 @@ public sealed partial class MainWindow : Window
         }
 
         SendToEditor(new { type = "openFileEnd" });
+
+        // 重新打开文件时把该文件已有的断点画回去
+        if (_breakpoints.TryGetValue(path, out SortedSet<int>? lines) && lines.Count > 0)
+        {
+            SendToEditor(new { type = "breakpoints", path, lines = lines.ToArray() });
+        }
     }
 
     private IntPtr WindowHandle => WinRT.Interop.WindowNative.GetWindowHandle(this);
@@ -645,6 +792,7 @@ public sealed partial class MainWindow : Window
         {
             return;
         }
+
 
         if (_activeActivity == id)
         {
@@ -659,20 +807,32 @@ public sealed partial class MainWindow : Window
     {
         _activeActivity = id;
         SidePanel.Visibility = Visibility.Visible;
+        // 文件树窄一点，检查器/大纲/调试需要更多横向空间
+        SidePanel.Width = id == "explorer" ? 220 : 240;
 
-        bool isExplorer = id == "explorer";
-        ExplorerPanel.Visibility = isExplorer ? Visibility.Visible : Visibility.Collapsed;
-        PlaceholderPanel.Visibility = isExplorer ? Visibility.Collapsed : Visibility.Visible;
+        ExplorerPanel.Visibility = id == "explorer" ? Visibility.Visible : Visibility.Collapsed;
+        CheckerPanel.Visibility = id == "checker" ? Visibility.Visible : Visibility.Collapsed;
+        OutlinePanel.Visibility = id == "outline" ? Visibility.Visible : Visibility.Collapsed;
+        DebugPanel.Visibility = id == "debug" ? Visibility.Visible : Visibility.Collapsed;
 
-        if (!isExplorer)
+        // 离开大纲栏目后不再跟着内容变化刷新
+        if (id != "outline")
         {
-            PlaceholderText.Text = id switch
-            {
-                "search" => "搜索面板尚未实现。",
-                "scm" => "源代码管理面板尚未实现。",
-                "run" => "运行与调试面板尚未实现，编译运行功能后续加入。",
-                _ => string.Empty,
-            };
+            SendToEditor(new { type = "stopOutline" });
+        }
+
+        switch (id)
+        {
+            case "checker":
+                SendCommand("check");
+                break;
+            case "outline":
+                SendToEditor(new { type = "requestOutline" });
+                break;
+            case "debug":
+                PrepareDebugPanel();
+                ShowDebugWindow();
+                break;
         }
 
         UpdateActivityVisuals();
@@ -682,6 +842,7 @@ public sealed partial class MainWindow : Window
     {
         _activeActivity = null;
         SidePanel.Visibility = Visibility.Collapsed;
+        SendToEditor(new { type = "stopOutline" });
         UpdateActivityVisuals();
     }
 
@@ -689,13 +850,837 @@ public sealed partial class MainWindow : Window
     {
         foreach (Button button in new[]
         {
-            ExplorerButton, SearchButton, SourceControlButton, RunButton,
+            ExplorerButton, CheckerButton, OutlineButton, DebugButton,
         })
         {
             bool selected = button.Tag is string id && id == _activeActivity;
             button.Background = selected ? SelectedActivityBrush : TransparentBrush;
             button.Opacity = selected ? 1.0 : 0.75;
         }
+    }
+
+    /* ---------------- 代码检查器 ---------------- */
+
+    private sealed class DiagnosticItem
+    {
+        public string Severity { get; init; } = "error";
+
+        public string Message { get; init; } = string.Empty;
+
+        public string Path { get; init; } = string.Empty;
+
+        public int Line { get; init; }
+
+        public int Column { get; init; }
+
+        public string Location
+        {
+            get
+            {
+                string name = string.IsNullOrEmpty(Path) ? string.Empty : System.IO.Path.GetFileName(Path);
+                return name.Length > 0 ? $"{name}:{Line}" : $"第 {Line} 行";
+            }
+        }
+
+        public string Glyph => Severity == "warning" ? "\uE7BA" : "\uE783";
+
+        public SolidColorBrush Brush => Severity == "warning" ? WarningBrush : ErrorBrush;
+    }
+
+    private static readonly SolidColorBrush ErrorBrush = new(Color.FromArgb(0xFF, 0xE8, 0x11, 0x23));
+    private static readonly SolidColorBrush WarningBrush = new(Color.FromArgb(0xFF, 0xD9, 0x8C, 0x00));
+
+    private static readonly Regex DiagnosticRegex = new(
+        @"^(?<file>.+?):(?<line>\d+):(?<col>\d+):\s*(?<sev>fatal error|error|warning|note):\s*(?<msg>.*)$",
+        RegexOptions.Compiled);
+
+    private bool _checking;
+
+    private static bool IsCSourceFile(string path)
+    {
+        string extension = System.IO.Path.GetExtension(path).ToLowerInvariant();
+        return extension is ".c" or ".cc" or ".cpp" or ".cxx" or ".c++" or ".h" or ".hpp" or ".hxx";
+    }
+
+    private void RecheckButton_Click(object sender, RoutedEventArgs e) => SendCommand("check");
+
+    /// <summary>对当前文件执行 g++ -fsyntax-only，把错误/警告显示到侧栏并画波浪线。</summary>
+    private async Task CheckFileAsync(string sourcePath, string? name)
+    {
+        if (_checking)
+        {
+            return;
+        }
+
+        if (string.IsNullOrEmpty(sourcePath))
+        {
+            DiagnosticsList.ItemsSource = null;
+            CheckerStatusText.Text = "没有打开的文件";
+            CheckerEmptyText.Text = "打开一个 C/C++ 文件后会自动检查。";
+            CheckerEmptyText.Visibility = Visibility.Visible;
+            return;
+        }
+
+        if (!IsCSourceFile(sourcePath))
+        {
+            DiagnosticsList.ItemsSource = null;
+            CheckerStatusText.Text = "仅支持 C/C++ 源文件";
+            CheckerEmptyText.Text = "当前文件不是 C/C++ 源文件。";
+            CheckerEmptyText.Visibility = Visibility.Visible;
+            return;
+        }
+
+        string? compiler = FindCompiler();
+        if (compiler is null)
+        {
+            CheckerStatusText.Text = "未找到 g++";
+            CheckerEmptyText.Text = "未找到编译器，请确认 Assets\\mingw64\\bin\\g++.exe 存在。";
+            CheckerEmptyText.Visibility = Visibility.Visible;
+            return;
+        }
+
+        _checking = true;
+        CheckerStatusText.Text = $"正在检查 {name ?? System.IO.Path.GetFileName(sourcePath)}…";
+        SendToEditor(new { type = "clearDiagnostics", path = sourcePath });
+
+        var items = new List<DiagnosticItem>();
+        string errorMessage = string.Empty;
+        try
+        {
+            string extraArguments = _settings.BuildExtraArguments();
+            string arguments =
+                $"-fsyntax-only -Wall{(extraArguments.Length > 0 ? " " + extraArguments : string.Empty)} {Quote(sourcePath)}";
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = compiler,
+                Arguments = arguments,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                WorkingDirectory = System.IO.Path.GetDirectoryName(sourcePath) ?? AppContext.BaseDirectory,
+                StandardOutputEncoding = Encoding.GetEncoding(936),
+                StandardErrorEncoding = Encoding.GetEncoding(936),
+            };
+
+            using Process process = Process.Start(startInfo)!;
+            // 同时读 stdout/stderr，避免大量诊断输出时管道塞满导致死锁
+            Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync();
+            Task<string> stderrTask = process.StandardError.ReadToEndAsync();
+            await Task.WhenAll(stdoutTask, stderrTask);
+            await process.WaitForExitAsync();
+            string stdout = stdoutTask.Result;
+            string stderr = stderrTask.Result;
+
+            foreach (string line in (stderr + "\n" + stdout).Split('\n'))
+            {
+                Match match = DiagnosticRegex.Match(line.TrimEnd('\r'));
+                if (!match.Success)
+                {
+                    continue;
+                }
+
+                string severity = match.Groups["sev"].Value;
+                if (severity == "note")
+                {
+                    continue;
+                }
+
+                if (!int.TryParse(match.Groups["line"].Value, out int lineNumber) || lineNumber <= 0)
+                {
+                    continue;
+                }
+
+                _ = int.TryParse(match.Groups["col"].Value, out int column);
+
+                items.Add(new DiagnosticItem
+                {
+                    Severity = severity == "warning" ? "warning" : "error",
+                    Message = match.Groups["msg"].Value.Trim(),
+                    Path = sourcePath,
+                    Line = lineNumber,
+                    Column = Math.Max(1, column),
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            _checking = false;
+        }
+
+        if (errorMessage.Length > 0)
+        {
+            CheckerStatusText.Text = "检查失败";
+            CheckerEmptyText.Text = errorMessage;
+            CheckerEmptyText.Visibility = Visibility.Visible;
+            return;
+        }
+
+        DiagnosticsList.ItemsSource = items;
+        int errors = items.Count(item => item.Severity == "error");
+        int warnings = items.Count - errors;
+        CheckerStatusText.Text = items.Count == 0
+            ? "检查通过"
+            : $"{errors} 个错误，{warnings} 个警告";
+        CheckerEmptyText.Text = items.Count == 0 ? "没有发现问题。" : string.Empty;
+        CheckerEmptyText.Visibility = items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        SendToEditor(new
+        {
+            type = "diagnostics",
+            path = sourcePath,
+            items = items.Select(item => new
+            {
+                severity = item.Severity,
+                message = item.Message,
+                line = item.Line,
+                column = item.Column,
+                endLine = item.Line,
+                endColumn = item.Column + 1,
+            }).ToArray(),
+        });
+    }
+
+    private async void DiagnosticsList_ItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is not DiagnosticItem item)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(item.Path) && File.Exists(item.Path))
+        {
+            await OpenFileAsync(item.Path);
+        }
+
+        SendToEditor(new { type = "reveal", line = item.Line, column = item.Column });
+    }
+
+    /* ---------------- 代码大纲 ---------------- */
+
+    private sealed class SymbolView
+    {
+        public SymbolView(string name, string kind, int line, int column)
+        {
+            Name = name;
+            Kind = kind;
+            Line = line;
+            Column = column;
+        }
+
+        public string Name { get; }
+
+        public string Kind { get; }
+
+        public int Line { get; }
+
+        public int Column { get; }
+
+        public string Detail => $"第 {Line} 行";
+
+        public string Glyph => Kind switch
+        {
+            "namespace" => "\uE8B7",
+            "class" or "struct" or "union" => "\uE8F1",
+            "enum" => "\uE8EF",
+            "macro" => "\uE8AC",
+            _ => "\uE943",
+        };
+    }
+
+    private void ApplyOutline(JsonNode message)
+    {
+        OutlineTree.RootNodes.Clear();
+
+        int count = 0;
+        if (message["symbols"] is JsonArray symbols)
+        {
+            foreach (JsonNode? symbol in symbols)
+            {
+                if (symbol is null)
+                {
+                    continue;
+                }
+
+                TreeViewNode? node = CreateSymbolNode(symbol);
+                if (node is not null)
+                {
+                    node.IsExpanded = true;
+                    OutlineTree.RootNodes.Add(node);
+                    count += 1;
+                }
+            }
+        }
+
+        OutlineEmptyText.Visibility = count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private TreeViewNode? CreateSymbolNode(JsonNode symbol)
+    {
+        string name = symbol["name"]?.GetValue<string>() ?? string.Empty;
+        if (name.Length == 0)
+        {
+            return null;
+        }
+
+        string kind = symbol["kind"]?.GetValue<string>() ?? "function";
+        int line = symbol["line"]?.GetValue<int>() ?? 0;
+        int column = symbol["column"]?.GetValue<int>() ?? 1;
+
+        var node = new TreeViewNode
+        {
+            Content = new SymbolView(name, kind, line, column),
+        };
+
+        if (symbol["children"] is JsonArray children)
+        {
+            foreach (JsonNode? child in children)
+            {
+                if (child is null)
+                {
+                    continue;
+                }
+
+                TreeViewNode? childNode = CreateSymbolNode(child);
+                if (childNode is not null)
+                {
+                    node.Children.Add(childNode);
+                }
+            }
+        }
+
+        return node;
+    }
+
+    private void OutlineTree_ItemInvoked(TreeView sender, TreeViewItemInvokedEventArgs args)
+    {
+        if (args.InvokedItem is not TreeViewNode node || node.Content is not SymbolView symbol)
+        {
+            return;
+        }
+
+        SendToEditor(new { type = "reveal", line = symbol.Line, column = symbol.Column });
+    }
+
+    /* ---------------- 调试（gdb） ---------------- */
+
+    private readonly Dictionary<string, SortedSet<int>> _breakpoints = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, int> _breakpointNumbers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<string> _watchExpressions = new();
+
+    private GdbSession? _debugSession;
+    private string? _debugSourcePath;
+    private bool _debugStarting;
+
+    /// <summary>调试控制窗口；右侧栏只看监视，控制/局部变量/调用栈在这个独立窗口里。</summary>
+    private DebugWindow? _debugWindow;
+
+    /// <summary>缓存最近一次的变量与调用栈，窗口晚于调试状态创建时能立刻显示。</summary>
+    private IReadOnlyList<DebugVariableItem> _debugLocals = Array.Empty<DebugVariableItem>();
+    private IReadOnlyList<DebugFrameItem> _debugFrames = Array.Empty<DebugFrameItem>();
+
+    private static string BreakpointKey(string path, int line) => path + ":" + line;
+
+    private static string? FindGdb()
+    {
+        string bundled = Path.Combine(AppContext.BaseDirectory, "Assets", "mingw64", "bin", "gdb.exe");
+        if (File.Exists(bundled))
+        {
+            return bundled;
+        }
+
+        foreach (string directory in (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+                     .Split(Path.PathSeparator))
+        {
+            if (directory.Length == 0)
+            {
+                continue;
+            }
+
+            try
+            {
+                string candidate = Path.Combine(directory.Trim('"'), "gdb.exe");
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+            }
+            catch (ArgumentException)
+            {
+                // PATH 中有非法路径，跳过
+            }
+        }
+
+        return null;
+    }
+
+    private void PrepareDebugPanel()
+    {
+        if (_debugSession is { IsAlive: true })
+        {
+            return;
+        }
+
+        int count = _breakpoints.Sum(pair => pair.Value.Count);
+        DebugStatus = count > 0 ? $"就绪，共 {count} 个断点（F5 开始）" : "未启动（F5 开始调试）";
+    }
+
+    private async Task StartDebugAsync(string sourcePath)
+    {
+        if (_debugSession is { IsAlive: true })
+        {
+            await ContinueDebugAsync();
+            return;
+        }
+
+        if (_activeActivity != "debug")
+        {
+            ShowActivity("debug");
+        }
+        else
+        {
+            // 浮窗被手动关掉后，再次开始调试时重新显示
+            ShowDebugWindow();
+        }
+
+        if (string.IsNullOrEmpty(sourcePath) || !IsCSourceFile(sourcePath))
+        {
+            DebugStatus = "请先打开一个 C/C++ 源文件";
+            return;
+        }
+
+        if (!File.Exists(sourcePath))
+        {
+            DebugStatus = "源文件不存在";
+            return;
+        }
+
+        string? gdb = FindGdb();
+        if (gdb is null)
+        {
+            DebugStatus = "未找到 gdb.exe，请放入 Assets\\mingw64\\bin";
+            SendToEditor(new
+            {
+                type = "terminalNote",
+                text = "[调试] 未找到 gdb.exe，请把 MinGW-w64 的 gdb.exe 放入 Assets\\mingw64\\bin 后重试。",
+            });
+            return;
+        }
+
+        if (_debugStarting || _building)
+        {
+            DebugStatus = "正在编译，请稍候…";
+            return;
+        }
+
+        // 上一次会话已经结束（进程退出但对象还在）时先清理干净
+        if (_debugSession is not null)
+        {
+            FinishDebugSession("已停止");
+        }
+
+        _debugStarting = true;
+        try
+        {
+            _debugSourcePath = sourcePath;
+            string exePath = Path.ChangeExtension(sourcePath, ".exe");
+            DebugStatus = "正在编译…";
+            SendToEditor(new { type = "terminalNote", text = $"[调试] 编译 {Path.GetFileName(sourcePath)}" });
+
+            if (!await CompileForDebugAsync(sourcePath, exePath))
+            {
+                DebugStatus = "编译失败";
+                return;
+            }
+
+            GdbSession? session = GdbSession.TryStart(
+                gdb, exePath, Path.GetDirectoryName(sourcePath) ?? AppContext.BaseDirectory);
+            if (session is null)
+            {
+                DebugStatus = "gdb 启动失败";
+                return;
+            }
+
+            _debugSession = session;
+            session.Stopped += (_, e) => DispatcherQueue.TryEnqueue(() => _ = HandleDebugStoppedAsync(e));
+            session.Running += (_, _) => DispatcherQueue.TryEnqueue(() => DebugStatus = "运行中…");
+            session.ConsoleOutput += (_, text) =>
+                DispatcherQueue.TryEnqueue(() => SendToEditor(new { type = "terminalStdout", text }));
+            session.Exited += (_, _) => DispatcherQueue.TryEnqueue(() =>
+            {
+                if (ReferenceEquals(_debugSession, session))
+                {
+                    FinishDebugSession("调试进程已退出");
+                }
+            });
+
+            await session.InitializeAsync();
+
+            _breakpointNumbers.Clear();
+            foreach (KeyValuePair<string, SortedSet<int>> pair in _breakpoints)
+            {
+                foreach (int line in pair.Value)
+                {
+                    int number = await session.InsertBreakpointAsync(pair.Key, line);
+                    if (number > 0)
+                    {
+                        _breakpointNumbers[BreakpointKey(pair.Key, line)] = number;
+                    }
+                }
+            }
+
+            DebugStatus = "已启动，运行中…";
+            _ = session.RunAsync();
+        }
+        catch (Exception ex)
+        {
+            DebugStatus = "调试启动失败";
+            SendToEditor(new { type = "terminalStdout", text = "[调试] " + ex.Message });
+            StopDebug();
+        }
+        finally
+        {
+            _debugStarting = false;
+        }
+    }
+
+    private async Task<bool> CompileForDebugAsync(string sourcePath, string exePath)
+    {
+        string? compiler = FindCompiler();
+        if (compiler is null)
+        {
+            SendToEditor(new { type = "terminalStdout", text = "[调试] 未找到 g++。" });
+            return false;
+        }
+
+        string extraArguments = _settings.BuildExtraArguments();
+        string arguments =
+            $"-g -static{(extraArguments.Length > 0 ? " " + extraArguments : string.Empty)} {Quote(sourcePath)} -o {Quote(exePath)}";
+
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = compiler,
+                Arguments = arguments,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                WorkingDirectory = Path.GetDirectoryName(sourcePath) ?? AppContext.BaseDirectory,
+                StandardOutputEncoding = Encoding.GetEncoding(936),
+                StandardErrorEncoding = Encoding.GetEncoding(936),
+            };
+
+            using Process process = Process.Start(startInfo)!;
+            process.OutputDataReceived += (_, e) => SendBuildOutput(e.Data);
+            process.ErrorDataReceived += (_, e) => SendBuildOutput(e.Data);
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+
+            await process.WaitForExitAsync();
+            process.WaitForExit();
+            return process.ExitCode == 0;
+        }
+        catch (Exception ex)
+        {
+            SendToEditor(new { type = "terminalStdout", text = "[调试] " + ex.Message });
+            return false;
+        }
+    }
+
+    private async Task ContinueDebugAsync()
+    {
+        if (_debugSession is not { IsAlive: true } session)
+        {
+            SendCommand("debugStart");
+            return;
+        }
+
+        DebugStatus = "运行中…";
+        await session.ContinueAsync();
+    }
+
+    private async Task StepOverDebugAsync()
+    {
+        if (_debugSession is not { IsAlive: true } session)
+        {
+            SendCommand("debugStart");
+            return;
+        }
+
+        DebugStatus = "单步执行…";
+        await session.NextAsync();
+    }
+
+    private async Task StepIntoDebugAsync()
+    {
+        if (_debugSession is not { IsAlive: true } session)
+        {
+            SendCommand("debugStart");
+            return;
+        }
+
+        DebugStatus = "单步执行…";
+        await session.StepAsync();
+    }
+
+    private async Task StepOutDebugAsync()
+    {
+        if (_debugSession is not { IsAlive: true } session)
+        {
+            return;
+        }
+
+        DebugStatus = "单步跳出…";
+        await session.FinishAsync();
+    }
+
+    private async Task HandleDebugStoppedAsync(GdbStopEventArgs info)
+    {
+        GdbSession? session = _debugSession;
+        if (session is null)
+        {
+            return;
+        }
+
+        if (info.Reason is "exited-normally" or "exited-signalled" or "exited")
+        {
+            FinishDebugSession(info.Reason == "exited-normally" ? "程序已正常退出" : "程序已退出");
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(info.File) && info.Line > 0)
+        {
+            string file = info.File;
+            if (!string.Equals(file, _debugSourcePath, StringComparison.OrdinalIgnoreCase) && File.Exists(file))
+            {
+                await OpenFileAsync(file);
+                _debugSourcePath = file;
+            }
+
+            SendToEditor(new { type = "debugLine", path = file, line = info.Line });
+            string function = info.Function.Length > 0 ? $"（{info.Function}）" : string.Empty;
+            DebugStatus = $"已暂停：{Path.GetFileName(file)}:{info.Line}{function}";
+        }
+        else
+        {
+            DebugStatus = "已暂停";
+        }
+
+        await RefreshDebugStateAsync();
+    }
+
+    private async Task RefreshDebugStateAsync()
+    {
+        GdbSession? session = _debugSession;
+        if (session is null)
+        {
+            return;
+        }
+
+        List<GdbFrame> frames = await session.GetFramesAsync();
+        _debugFrames = frames.Select(frame => new DebugFrameItem
+        {
+            Level = frame.Level,
+            File = frame.File,
+            Line = frame.Line,
+            Text = $"#{frame.Level} {frame.Function}" +
+                   (frame.File.Length > 0 ? $"  {Path.GetFileName(frame.File)}:{frame.Line}" : string.Empty),
+        }).ToList();
+        _debugWindow?.SetFrames(_debugFrames);
+
+        List<GdbVariable> variables = await session.GetVariablesAsync();
+        _debugLocals = variables
+            .Select(variable => new DebugVariableItem { Name = variable.Name, Value = variable.Value })
+            .ToList();
+        _debugWindow?.SetLocals(_debugLocals);
+
+        await RefreshWatchAsync();
+    }
+
+    private async Task RefreshWatchAsync()
+    {
+        GdbSession? session = _debugSession;
+        if (session is not { IsAlive: true } || _watchExpressions.Count == 0)
+        {
+            DebugWatchList.ItemsSource = null;
+            return;
+        }
+
+        var items = new List<DebugVariableItem>();
+        foreach (string expression in _watchExpressions)
+        {
+            items.Add(new DebugVariableItem
+            {
+                Name = expression,
+                Value = await session.EvaluateAsync(expression),
+            });
+        }
+
+        DebugWatchList.ItemsSource = items;
+    }
+
+    private void FinishDebugSession(string status)
+    {
+        GdbSession? session = _debugSession;
+        _debugSession = null;
+        _breakpointNumbers.Clear();
+
+        try { session?.Dispose(); }
+        catch (Exception) { }
+
+        SendToEditor(new { type = "debugLineClear" });
+        _debugLocals = Array.Empty<DebugVariableItem>();
+        _debugFrames = Array.Empty<DebugFrameItem>();
+        _debugWindow?.SetLocals(_debugLocals);
+        _debugWindow?.SetFrames(_debugFrames);
+        DebugWatchList.ItemsSource = null;
+        DebugStatus = status;
+    }
+
+    private void StopDebug() => FinishDebugSession("已停止");
+
+    private async void HandleBreakpointToggle(string? path, int line, bool enabled)
+    {
+        if (string.IsNullOrEmpty(path) || line <= 0)
+        {
+            return;
+        }
+
+        if (!_breakpoints.TryGetValue(path, out SortedSet<int>? lines))
+        {
+            lines = new SortedSet<int>();
+            _breakpoints[path] = lines;
+        }
+
+        if (enabled)
+        {
+            lines.Add(line);
+        }
+        else
+        {
+            lines.Remove(line);
+        }
+
+        if (lines.Count == 0)
+        {
+            _breakpoints.Remove(path);
+        }
+
+        if (_debugSession is not { IsAlive: true } session)
+        {
+            return;
+        }
+
+        string key = BreakpointKey(path, line);
+        if (enabled)
+        {
+            int number = await session.InsertBreakpointAsync(path, line);
+            if (number > 0)
+            {
+                _breakpointNumbers[key] = number;
+            }
+        }
+        else if (_breakpointNumbers.TryGetValue(key, out int number))
+        {
+            await session.DeleteBreakpointAsync(number);
+            _breakpointNumbers.Remove(key);
+        }
+    }
+
+    /* ---------------- 调试控制窗口 ---------------- */
+
+    /// <summary>同时更新左侧栏与调试窗口里的状态文字。</summary>
+    private string DebugStatus
+    {
+        set
+        {
+            DebugStatusText.Text = value;
+            _debugWindow?.SetStatus(value);
+        }
+    }
+
+    /// <summary>显示/唤出调试控制窗口（独立 WinUI 窗口，避免自绘浮层在 WebView2 上收不到输入）。</summary>
+    private void ShowDebugWindow()
+    {
+        if (_debugWindow is null)
+        {
+            _debugWindow = new DebugWindow();
+            _debugWindow.StartRequested += () => _ = ContinueDebugAsync();
+            _debugWindow.StopRequested += StopDebug;
+            _debugWindow.StepOverRequested += () => _ = StepOverDebugAsync();
+            _debugWindow.StepIntoRequested += () => _ = StepIntoDebugAsync();
+            _debugWindow.StepOutRequested += () => _ = StepOutDebugAsync();
+            _debugWindow.FrameActivated += frame => _ = ActivateFrameAsync(frame);
+            _debugWindow.SetLocals(_debugLocals);
+            _debugWindow.SetFrames(_debugFrames);
+            _debugWindow.SetStatus(DebugStatusText.Text);
+            PositionDebugWindow(_debugWindow);
+        }
+
+        _debugWindow.ShowWindow();
+    }
+
+    /// <summary>把调试窗口放到主窗口右侧，便于同时看代码和变量。</summary>
+    private void PositionDebugWindow(DebugWindow window)
+    {
+        var position = AppWindow.Position;
+        var size = AppWindow.Size;
+        window.AppWindow.Move(new PointInt32(
+            position.X + Math.Max(0, size.Width - 480),
+            position.Y + 96));
+    }
+
+    private async Task ActivateFrameAsync(DebugFrameItem frame)
+    {
+        if (_debugSession is not { IsAlive: true } session)
+        {
+            return;
+        }
+
+        await session.SelectFrameAsync(frame.Level);
+
+        if (!string.IsNullOrEmpty(frame.File) && File.Exists(frame.File))
+        {
+            if (!string.Equals(frame.File, _debugSourcePath, StringComparison.OrdinalIgnoreCase))
+            {
+                await OpenFileAsync(frame.File);
+                _debugSourcePath = frame.File;
+            }
+
+            SendToEditor(new { type = "reveal", line = frame.Line, column = 1 });
+        }
+
+        await RefreshDebugStateAsync();
+    }
+
+    private void DebugWatchInput_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key != Windows.System.VirtualKey.Enter)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        string expression = DebugWatchInput.Text.Trim();
+        if (expression.Length == 0)
+        {
+            return;
+        }
+
+        if (!_watchExpressions.Contains(expression))
+        {
+            _watchExpressions.Add(expression);
+        }
+
+        DebugWatchInput.Text = string.Empty;
+        _ = RefreshWatchAsync();
     }
 
     /* ---------------- 左侧文件树 ---------------- */
@@ -1303,6 +2288,15 @@ public sealed partial class MainWindow : Window
                 break;
             case Windows.System.VirtualKey.F10:
                 command = "run";
+                break;
+            case Windows.System.VirtualKey.F5:
+                command = shift ? "debugStop" : "debugContinue";
+                break;
+            case Windows.System.VirtualKey.F7:
+                command = "debugStepOver";
+                break;
+            case Windows.System.VirtualKey.F8:
+                command = "debugStepInto";
                 break;
             case Windows.System.VirtualKey.N when control:
                 command = "newUntitled";
