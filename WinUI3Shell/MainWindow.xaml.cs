@@ -340,8 +340,14 @@ public sealed partial class MainWindow : Window
 
         try
         {
+            // WinUI3 的 WebView2 在 Visibility=Collapsed 时无法完成内核初始化：
+            // EnsureCoreWebView2Async 返回后 CoreWebView2 仍可能为 null（表现为 NullReferenceException）。
+            // 启动时欢迎页会先盖上来并把 WebView 收起，所以这里临时显示，初始化完成后再按需收起。
+            EditorWebView.Visibility = Visibility.Visible;
+
             await EditorWebView.EnsureCoreWebView2Async();
-            CoreWebView2 core = EditorWebView.CoreWebView2;
+            CoreWebView2 core = EditorWebView.CoreWebView2
+                ?? throw new InvalidOperationException("WebView2 内核未创建成功（CoreWebView2 为空）。");
             // 页面自己画圆角，WebView2 底色透明，这样卡片四角的圆角不会被这块方形表面盖住
             EditorWebView.DefaultBackgroundColor = Microsoft.UI.Colors.Transparent;
             // 关掉 WebView2 自带的 Ctrl+滚轮 / Ctrl+加号缩放，交给页面自己处理（字号、界面缩放）
@@ -351,13 +357,18 @@ public sealed partial class MainWindow : Window
             core.NewWindowRequested += (_, e) => e.Handled = true;
             core.WebMessageReceived += EditorWebMessageReceived;
             core.Navigate($"https://{EditorHostName}/index.html?v={DateTime.Now.Ticks}");
+
+            // 没有打开任何文件时继续显示欢迎页，编辑器隐藏（内核已初始化，隐藏不影响后续使用）
+            if (WelcomeOverlay.Visibility == Visibility.Visible)
+            {
+                EditorWebView.Visibility = Visibility.Collapsed;
+            }
         }
         catch (Exception ex)
         {
             await ShowMessageAsync(
                 "编辑器初始化失败",
                 "编辑器（WebView2）没有加载成功。\n\n"
-                + "最常见的原因是系统缺少 Microsoft Edge WebView2 运行时，安装后重启本程序即可。\n\n"
                 + DescribeWebView2() + "\n\n"
                 + "详细信息：" + ex.Message);
         }
@@ -545,8 +556,6 @@ public sealed partial class MainWindow : Window
         await ShowMessageAsync(
             "编辑器未就绪",
             "编辑器页面还没有加载完成，所以新建/打开文件暂时没有反应。\n\n"
-            + "如果一直如此，通常是系统缺少 Microsoft Edge WebView2 运行时，"
-            + "安装后重启本程序即可。\n\n"
             + DescribeWebView2());
         return false;
     }
@@ -555,11 +564,14 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            return "当前 WebView2 运行时版本：" + CoreWebView2Environment.GetAvailableBrowserVersionString();
+            return "当前 WebView2 运行时版本："
+                + CoreWebView2Environment.GetAvailableBrowserVersionString()
+                + "（能读到版本说明运行时已安装，问题不在缺少运行时）";
         }
         catch (Exception ex)
         {
-            return "且未检测到 WebView2 运行时：" + ex.Message;
+            return "未检测到 WebView2 运行时：" + ex.Message
+                + "\n请安装 Microsoft Edge WebView2 运行时后重启本程序。";
         }
     }
 
