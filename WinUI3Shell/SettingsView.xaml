@@ -1,4 +1,4 @@
-﻿﻿<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <UserControl
     x:Class="WinUI3Shell.SettingsView"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -1024,27 +1024,6 @@
                                         <ComboBoxItem Content="提高" Tag="hard" />
                                         <ComboBoxItem Content="省选及以上" Tag="expert" />
                                     </ComboBox>
-                                </Grid>
-
-                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
-
-                                <Grid Style="{StaticResource SettingRowStyle}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <FontIcon Grid.Column="0" Glyph="&#xE7C3;" Style="{StaticResource SettingIconStyle}" />
-                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
-                                        <TextBlock Text="抽题题库" Style="{StaticResource SettingLabelStyle}" />
-                                        <TextBlock Text="勾选参与随机抽题的平台（至少一个）" Style="{StaticResource SettingDescriptionStyle}" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
-                                        <CheckBox x:Name="PracticeOjLuoguSwitch" Tag="luogu" Content="洛谷" Click="PracticeOjSwitch_Toggled" />
-                                        <CheckBox x:Name="PracticeOjCodeforcesSwitch" Tag="codeforces" Content="Codeforces" Click="PracticeOjSwitch_Toggled" />
-                                        <CheckBox x:Name="PracticeOjAtCoderSwitch" Tag="atcoder" Content="AtCoder" Click="PracticeOjSwitch_Toggled" />
-                                        <CheckBox x:Name="PracticeOjNowcoderSwitch" Tag="nowcoder" Content="牛客" Click="PracticeOjSwitch_Toggled" />
-                                    </StackPanel>
                                 </Grid>
                             </StackPanel>
                         </Border>

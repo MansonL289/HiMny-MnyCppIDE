@@ -496,6 +496,36 @@
         }
 
         const varNames = new Set();
+        // 同一句声明里逗号后面的变量（int a, b, c;）不会单独匹配到，
+        // 需要从第一个变量往后扫，否则只有 a 被当成变量着色，b 一直是普通标识符
+        function collectCommaDeclarators(from) {
+          let i = from;
+          let depth = 0;
+          while (i < masked.length) {
+            const ch = masked[i];
+            if (ch === ';') { break; }
+            if (ch === '(' || ch === '[' || ch === '{') { depth += 1; i += 1; continue; }
+            if (ch === ')' || ch === ']' || ch === '}') {
+              if (depth === 0) { break; }
+              depth -= 1; i += 1; continue;
+            }
+            if (ch === ',' && depth === 0) {
+              i += 1;
+              while (i < masked.length && /[ \t\r\n*&]/.test(masked[i])) { i += 1; }
+              const more = /^([A-Za-z_]\w*)/.exec(masked.slice(i));
+              if (!more) { continue; }
+              const moreName = more[1];
+              if (!CPP_NOT_TYPE_WORDS.has(moreName) && !funcNames.has(moreName)) {
+                varNames.add(moreName);
+                push(i, i + moreName.length, 'variable');
+              }
+              i += moreName.length;
+              continue;
+            }
+            i += 1;
+          }
+        }
+
         const vdecl = /([A-Za-z_]\w*)[ \t]+([A-Za-z_]\w*)[ \t]*([=;,)\[:{])/g;
         m = vdecl.exec(masked);
         while (m !== null) {
@@ -505,6 +535,7 @@
             varNames.add(name);
             const start = m.index + m[0].lastIndexOf(name);
             push(start, start + name.length, 'variable');
+            collectCommaDeclarators(start + name.length);
           }
           m = vdecl.exec(masked);
         }

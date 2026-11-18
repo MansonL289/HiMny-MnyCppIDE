@@ -138,29 +138,8 @@ public sealed class AppSettings
     /// <summary>随机抽题难度：any / easy / medium / hard / expert。</summary>
     public string PracticeDifficulty { get; set; } = "any";
 
-    /// <summary>随机抽题的题库（逗号分隔的 OJ id），默认全部平台。</summary>
-    public string PracticeOjs { get; set; } = "luogu,codeforces,atcoder,nowcoder";
-
     /// <summary>搜索结果默认排序：SubmitAsc / SubmitDesc / PassRateAsc / PassRateDesc / DifficultyAsc / DifficultyDesc / TitleAsc。</summary>
     public string PracticeSortMode { get; set; } = "SubmitAsc";
-
-    /// <summary>把题库设置拆成 OJ id 列表（忽略空项）。</summary>
-    public List<string> PracticeOjList()
-    {
-        var list = new List<string>();
-        foreach (string part in PracticeOjs.Split(',', StringSplitOptions.RemoveEmptyEntries))
-        {
-            string id = part.Trim();
-            if (id.Length > 0)
-            {
-                list.Add(id);
-            }
-        }
-        return list;
-    }
-
-    /// <summary>某平台是否在抽题题库里。</summary>
-    public bool PracticeOjEnabled(string ojId) => PracticeOjList().Contains(ojId, StringComparer.OrdinalIgnoreCase);
 
     public static AppSettings Load()
     {

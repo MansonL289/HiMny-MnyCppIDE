@@ -119,10 +119,6 @@ public sealed partial class SettingsView : UserControl
 
         PracticeDifficultyBox.SelectedIndex = IndexOfTag(PracticeDifficultyBox, settings.PracticeDifficulty);
         PracticeSortBox.SelectedIndex = IndexOfTag(PracticeSortBox, settings.PracticeSortMode);
-        PracticeOjLuoguSwitch.IsChecked = settings.PracticeOjEnabled("luogu");
-        PracticeOjCodeforcesSwitch.IsChecked = settings.PracticeOjEnabled("codeforces");
-        PracticeOjAtCoderSwitch.IsChecked = settings.PracticeOjEnabled("atcoder");
-        PracticeOjNowcoderSwitch.IsChecked = settings.PracticeOjEnabled("nowcoder");
 
         _loading = false;
 
@@ -1034,44 +1030,6 @@ public sealed partial class SettingsView : UserControl
             return;
         }
         _settings.PracticeSortMode = SelectedTag(PracticeSortBox, "SubmitAsc");
-        RaiseChanged();
-    }
-
-    private void PracticeOjSwitch_Toggled(object sender, RoutedEventArgs e)
-    {
-        if (_loading)
-        {
-            return;
-        }
-
-        // 至少保留一个平台，否则无法抽题
-        var boxes = new[] { PracticeOjLuoguSwitch, PracticeOjCodeforcesSwitch, PracticeOjAtCoderSwitch, PracticeOjNowcoderSwitch };
-        bool anyOn = false;
-        foreach (CheckBox box in boxes)
-        {
-            if (box.IsChecked == true)
-            {
-                anyOn = true;
-                break;
-            }
-        }
-        if (!anyOn && sender is CheckBox current)
-        {
-            _loading = true;
-            current.IsChecked = true;
-            _loading = false;
-            return;
-        }
-
-        var ids = new List<string>();
-        foreach (CheckBox box in boxes)
-        {
-            if (box.IsChecked == true && box.Tag is string id)
-            {
-                ids.Add(id);
-            }
-        }
-        _settings.PracticeOjs = string.Join(',', ids);
         RaiseChanged();
     }
 }

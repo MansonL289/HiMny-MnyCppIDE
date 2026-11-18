@@ -25,6 +25,7 @@ public sealed class OjDefinition
     public string SubmitUrlPattern { get; set; } = string.Empty;
     public string SearchScript { get; set; } = string.Empty;
     public string ProblemScript { get; set; } = string.Empty;
+
     public string LoginCheckScript { get; set; } = string.Empty;
     public List<string> LoginCookies { get; set; } = new();
     public int SettleMs { get; set; } = 900;
@@ -218,23 +219,6 @@ public sealed class OjSample : INotifyPropertyChanged
 
             _isSelected = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
-        }
-    }
-
-    /// <summary>样例输入的单行摘要，用于测试面板的列表。</summary>
-    public string InputPreview
-    {
-        get
-        {
-            string oneLine = string.Join(
-                " ",
-                Input.Replace("\r", string.Empty).Split('\n', StringSplitOptions.RemoveEmptyEntries)).Trim();
-            if (oneLine.Length == 0)
-            {
-                return "（无输入）";
-            }
-
-            return oneLine.Length > 70 ? oneLine[..70] + "…" : oneLine;
         }
     }
 

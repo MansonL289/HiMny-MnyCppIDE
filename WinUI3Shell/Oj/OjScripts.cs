@@ -9,8 +9,39 @@ internal static class OjScripts
     /// </summary>
     public const string Prelude = """
 (function () {
+  // MathJax / KaTeX 会把一段公式渲染成多份（可见字形、MathML、TeX 注释），
+  // 直接取 textContent 会得到 "AAA" 这种重复文本；这里优先取 TeX 源码并包回 $…$
+  function mathContainer(n) {
+    const tag = n.tagName.toLowerCase();
+    return tag === 'mjx-container' ||
+      (n.classList && (n.classList.contains('katex') || n.classList.contains('katex-display')));
+  }
+
+  function mathTex(el) {
+    const ann = el.querySelector('annotation[encoding="application/x-tex"]');
+    if (ann && ann.textContent.trim()) { return ann.textContent.trim(); }
+    const alt = el.getAttribute('alttext');
+    if (alt && alt.trim()) { return alt.trim(); }
+    const body = el.querySelector('.katex-html') || el.querySelector('mjx-math') || el;
+    return (body.textContent || '').trim();
+  }
+
+  function mathMarkup(el) {
+    const tex = mathTex(el);
+    if (!tex) { return ''; }
+    // 纯空白的公式（有的站点用 \,\, 之类的占位符做缩进）直接丢掉
+    if (/^[\\,;:!\s]+$/.test(tex)) { return ''; }
+    const tag = el.tagName.toLowerCase();
+    const display = tag === 'mjx-container'
+      ? (el.getAttribute('display') === 'true' || el.getAttribute('display') === 'block')
+      : (el.classList && el.classList.contains('katex-display'));
+    return display ? '\n$$' + tex + '$$\n' : '$' + tex + '$';
+  }
+
   function inlineText(el) {
     let out = '';
+    // 直接对公式容器调用时也要走公式分支，否则会把 MathML/TeX 注释重复拼一遍
+    if (el.nodeType === 1 && mathContainer(el)) { return mathMarkup(el); }
     for (let i = 0; i < el.childNodes.length; i++) {
       const n = el.childNodes[i];
       if (n.nodeType === 3) { out += n.nodeValue.replace(/\s+/g, ' '); continue; }
@@ -31,8 +62,25 @@ internal static class OjScripts
         out += text ? (href ? '[' + text + '](' + href + ')' : text) : '';
         continue;
       }
+      if (mathContainer(n)) { out += mathMarkup(n); continue; }
       if (tag === 'script' || tag === 'style') continue;
       out += inlineText(n);
+    }
+    return out;
+  }
+
+  // 保留 <pre> 里的原始换行，同时把公式容器还原成 $…$
+  function preText(el) {
+    let out = '';
+    for (let i = 0; i < el.childNodes.length; i++) {
+      const n = el.childNodes[i];
+      if (n.nodeType === 3) { out += n.nodeValue; continue; }
+      if (n.nodeType !== 1) continue;
+      const tag = n.tagName.toLowerCase();
+      if (tag === 'br') { out += '\n'; continue; }
+      if (mathContainer(n)) { out += mathMarkup(n).trim(); continue; }
+      if (tag === 'script' || tag === 'style') continue;
+      out += preText(n);
     }
     return out;
   }
@@ -45,20 +93,39 @@ internal static class OjScripts
     const lines = [];
     function push(text) { lines.push(text); }
 
+    // 块级标签以外的节点（span/u/b/公式容器等）都当作行内内容，
+    // 牛客的题面就是「文字 + 行内公式」直接排在 .section-content 里，
+    // 逐节点当段落会把一句话拆成很多行，公式也会被拆成重复的碎片
+    const BLOCK_TAGS = {
+      p: 1, div: 1, section: 1, article: 1, main: 1, blockquote: 1, pre: 1,
+      ul: 1, ol: 1, table: 1, hr: 1, li: 1, figure: 1, details: 1,
+      h1: 1, h2: 1, h3: 1, h4: 1, h5: 1, h6: 1
+    };
+
     function walk(node) {
+      let buf = '';
+      function flush() {
+        const text = buf.replace(/[ \t]+/g, ' ').replace(/\n{2,}/g, '\n').trim();
+        buf = '';
+        if (text) { push(''); push(text); push(''); }
+      }
+
       for (let i = 0; i < node.childNodes.length; i++) {
         const n = node.childNodes[i];
         // 混合内容容器里直接挂在块级子元素旁边的文字（如 CF 的 time limit 值），
-        // 只遍历元素节点会把它们丢掉，这里当成独立段落补回来
+        // 与相邻的行内节点一起攒成一段
         if (n.nodeType === 3) {
-          const text = n.nodeValue.replace(/\s+/g, ' ').trim();
-          if (text) { push(''); push(text); push(''); }
+          buf += n.nodeValue.replace(/\s+/g, ' ');
           continue;
         }
         if (n.nodeType !== 1) continue;
         const tag = n.tagName.toLowerCase();
         if (tag === 'script' || tag === 'style' || tag === 'noscript' || tag === 'svg') continue;
+        if (tag === 'br') { flush(); continue; }
+        if (mathContainer(n)) { buf += mathMarkup(n); continue; }
+        if (!BLOCK_TAGS[tag]) { buf += inlineText(n); continue; }
 
+        flush();
         if (/^h[1-6]$/.test(tag)) {
           const level = Number(tag.charAt(1));
           const text = inlineText(n).trim();
@@ -66,9 +133,20 @@ internal static class OjScripts
           continue;
         }
         if (tag === 'pre') {
+          // 有些 OJ 把样例逐行放在 .test-example-line 里，
+          // 直接取 textContent 会把所有行拼成一行，这里按行还原换行
+          const lineEls = n.querySelectorAll('.test-example-line');
+          let code = '';
+          if (lineEls.length) {
+            const arr = [];
+            for (let k = 0; k < lineEls.length; k++) arr.push(lineEls[k].textContent);
+            code = arr.join('\n');
+          } else {
+            code = preText(n);
+          }
           push('');
           push('```');
-          push(n.textContent.replace(/\s+$/, ''));
+          push(code.replace(/\s+$/, ''));
           push('```');
           push('');
           continue;

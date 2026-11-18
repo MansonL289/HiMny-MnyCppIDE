@@ -1880,11 +1880,13 @@ public sealed partial class MainWindow : Window
         TitleAppIcon.Visibility = overlay ? Visibility.Collapsed : Visibility.Visible;
         TitleIconButton.Visibility = overlay ? Visibility.Visible : Visibility.Collapsed;
         TitleIconButton.IsHitTestVisible = overlay;
-        TitleIconGlyph.Glyph = "\uE80F";
+        // 设置页用返回箭头；刷题模式用主页图标（回到默认模式）
+        TitleIconGlyph.Glyph = _settingsOpen ? "\uE72B" : "\uE80F";
         ToolTipService.SetToolTip(
             TitleIconButton,
-            _practiceOpen ? "回到默认模式" : _settingsOpen ? "返回主页" : null);
-        SettingsButton.Visibility = _practiceOpen ? Visibility.Collapsed : Visibility.Visible;
+            _settingsOpen ? "返回" : _practiceOpen ? "回到默认模式" : null);
+        // 刷题模式下也要能进设置（调整难度、排序等）
+        SettingsButton.Visibility = Visibility.Visible;
         SettingsButtonIcon.Glyph = "\uE713";
         ToolTipService.SetToolTip(SettingsButton, "设置");
     }
@@ -1925,23 +1927,30 @@ public sealed partial class MainWindow : Window
 
         _practiceOpen = false;
         PracticeViewControl.Suspend();
+        // 刷题页里是 WebView2，无法做淡出/位移动画（会直接崩溃），只能直接收起
         PracticeOverlay.Visibility = Visibility.Collapsed;
         MenuBarArea.Visibility = Visibility.Visible;
         MainContentArea.Visibility = Visibility.Visible;
         UpdateSettingsTitleBar();
         UpdateTerminalButtonState();
         SendCommand("focus");
+        // 主界面当前是欢迎页（纯 XAML）时补一个入场动画；
+        // 有打开的编辑器时里面是 WebView2，不能对它的容器做动画
+        if (WelcomeOverlay.Visibility == Visibility.Visible)
+        {
+            PlayWelcomeAnimation(showing: true);
+        }
     }
 
     private void TitleIconButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_practiceOpen)
-        {
-            HidePractice();
-        }
-        else if (_settingsOpen)
+        if (_settingsOpen)
         {
             HideSettings();
+        }
+        else if (_practiceOpen)
+        {
+            HidePractice();
         }
     }
 
@@ -1955,6 +1964,12 @@ public sealed partial class MainWindow : Window
 
         _settingsOpen = true;
         UpdateSettingsTitleBar();
+        // 刷题页里的 WebView2 会盖在设置页上方（空气层），先收起刷题浮层；
+        // 设置关闭后由 HideSettings 再恢复回来
+        if (_practiceOpen)
+        {
+            PracticeOverlay.Visibility = Visibility.Collapsed;
+        }
         SettingsViewControl.Load(_settings);
         UpdateTerminalButtonState();
         PlaySettingsAnimation(showing: true);
@@ -1977,7 +1992,12 @@ public sealed partial class MainWindow : Window
                 SettingsOverlay.Visibility = Visibility.Collapsed;
                 UpdateTerminalButtonState();
             });
-        SendCommand("focus");
+
+        // 刷题模式下焦点还给刷题页，别把焦点丢给隐藏的编辑器
+        if (!_practiceOpen)
+        {
+            SendCommand("focus");
+        }
     }
 
     private int _settingsAnimToken;
@@ -2096,12 +2116,19 @@ public sealed partial class MainWindow : Window
         }
         else
         {
-            // 先让设置页滑出右侧，再恢复主页面
+            // 先让设置页滑出右侧，再恢复原来的界面（刷题模式就恢复刷题浮层）
             AddSlide(settingsX, pageWidth, 220, EasingMode.EaseIn);
-            AddVisibility(MenuBarArea, Visibility.Visible, 180);
-            AddVisibility(MainContentArea, Visibility.Visible, 180);
-            AddFade(MenuBarArea, oldContentOpacity, 1, 200, EasingMode.EaseOut, 180);
-            AddFade(MainContentArea, oldContentOpacity, 1, 200, EasingMode.EaseOut, 180);
+            if (_practiceOpen)
+            {
+                AddVisibility(PracticeOverlay, Visibility.Visible, 180);
+            }
+            else
+            {
+                AddVisibility(MenuBarArea, Visibility.Visible, 180);
+                AddVisibility(MainContentArea, Visibility.Visible, 180);
+                AddFade(MenuBarArea, oldContentOpacity, 1, 200, EasingMode.EaseOut, 180);
+                AddFade(MainContentArea, oldContentOpacity, 1, 200, EasingMode.EaseOut, 180);
+            }
         }
 
         storyboard.Completed += (_, _) =>
@@ -2117,8 +2144,23 @@ public sealed partial class MainWindow : Window
             _settingsTransitioning = false;
             MenuBarArea.Opacity = showing ? 0 : 1;
             MainContentArea.Opacity = showing ? 0 : 1;
-            MenuBarArea.Visibility = showing ? Visibility.Collapsed : Visibility.Visible;
-            MainContentArea.Visibility = showing ? Visibility.Collapsed : Visibility.Visible;
+            if (showing)
+            {
+                MenuBarArea.Visibility = Visibility.Collapsed;
+                MainContentArea.Visibility = Visibility.Collapsed;
+            }
+            else if (_practiceOpen)
+            {
+                // 刷题模式：设置关掉后回到刷题界面，不要把主 IDE 露出来
+                MenuBarArea.Visibility = Visibility.Collapsed;
+                MainContentArea.Visibility = Visibility.Collapsed;
+                PracticeOverlay.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                MenuBarArea.Visibility = Visibility.Visible;
+                MainContentArea.Visibility = Visibility.Visible;
+            }
             SettingsViewControl.Opacity = 1;
             // 关闭后停留在右侧，下一次打开不会复用到“已显示在中央”的旧渲染帧
             SettingsTransform.X = showing ? 0 : pageWidth;
@@ -2327,6 +2369,14 @@ public sealed partial class MainWindow : Window
     /// <summary>设置页打开时用 Esc 关闭设置（焦点落在下拉框等控件上时的兜底）。</summary>
     private void Escape_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
+        // 设置页在刷题模式之上：Esc 先关设置
+        if (_settingsOpen)
+        {
+            args.Handled = true;
+            HideSettings();
+            return;
+        }
+
         if (_practiceOpen)
         {
             // 刷题模式下 Esc 只负责收起登录浮层，不退出刷题模式
@@ -2334,14 +2384,6 @@ public sealed partial class MainWindow : Window
             PracticeViewControl.HandleEscape();
             return;
         }
-
-        if (!_settingsOpen)
-        {
-            return;
-        }
-
-        args.Handled = true;
-        HideSettings();
     }
 
     /// <summary>Win11 强制窗口圆角；Win10 不支持该属性，调用失败也不影响使用。</summary>

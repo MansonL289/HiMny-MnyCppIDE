@@ -255,19 +255,21 @@
         <!-- 测试面板：选择样例 / 手动输入 -->
         <DataTemplate x:Key="TestSampleItemTemplate" x:DataType="oj:OjSample">
             <CheckBox
-                Padding="0,2"
+                MinWidth="0"
+                Padding="10,4,0,4"
                 HorizontalAlignment="Stretch"
                 HorizontalContentAlignment="Stretch"
                 IsChecked="{x:Bind IsSelected, Mode=TwoWay}">
-                <StackPanel Spacing="2">
+                <StackPanel Spacing="4">
                     <TextBlock FontSize="13" Text="{x:Bind Title}" />
                     <TextBlock
                         FontFamily="Cascadia Mono, Consolas, monospace"
                         FontSize="11"
-                        MaxLines="1"
+                        MaxLines="4"
                         Opacity="0.5"
-                        Text="{x:Bind InputPreview}"
-                        TextTrimming="CharacterEllipsis" />
+                        Text="{x:Bind Input}"
+                        TextTrimming="CharacterEllipsis"
+                        TextWrapping="Wrap" />
                 </StackPanel>
             </CheckBox>
         </DataTemplate>
@@ -357,17 +359,34 @@
                     HorizontalAlignment="Center"
                     Opacity="0.45"
                     Margin="0,-10,0,0" />
-                <TextBox
-                    x:Name="SearchBox"
+                <Grid
                     Width="440"
-                    PlaceholderText="搜索题目"
-                    FontSize="15"
-                    Height="46"
-                    Padding="16,13,16,13"
-                    CornerRadius="12"
-                    HorizontalAlignment="Center"
-                    KeyDown="SearchBox_KeyDown"
-                    AutomationProperties.AutomationId="PracticeSearchBox" />
+                    HorizontalAlignment="Center">
+                    <TextBox
+                        x:Name="SearchBox"
+                        Padding="16,13,52,13"
+                        PlaceholderText="搜索题目"
+                        FontSize="15"
+                        Height="46"
+                        CornerRadius="12"
+                        KeyDown="SearchBox_KeyDown"
+                        AutomationProperties.AutomationId="PracticeSearchBox" />
+                    <Button
+                        Width="36"
+                        Height="36"
+                        Margin="0,0,5,0"
+                        Padding="0"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Center"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        CornerRadius="8"
+                        Click="SearchSubmit_Click"
+                        ToolTipService.ToolTip="搜索"
+                        AutomationProperties.Name="搜索">
+                        <FontIcon Glyph="&#xE721;" FontSize="15" />
+                    </Button>
+                </Grid>
                 <StackPanel
                     HorizontalAlignment="Center"
                     Orientation="Horizontal"
@@ -378,14 +397,10 @@
                         Padding="18,0"
                         CornerRadius="10"
                         Click="RandomProblem_Click"
-                        ToolTipService.ToolTip="从洛谷随机抽一道题"
+                        ToolTipService.ToolTip="随机抽一道洛谷题目"
                         AutomationProperties.AutomationId="PracticeRandomButton">
                         <StackPanel Orientation="Horizontal" Spacing="7">
-                            <Image
-                                x:Name="RandomLuoguIcon"
-                                Width="16"
-                                Height="16"
-                                VerticalAlignment="Center" />
+                            <FontIcon Glyph="&#xE8B1;" FontSize="14" VerticalAlignment="Center" />
                             <TextBlock Text="随机抽题" FontSize="13" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
@@ -411,15 +426,6 @@
                         ToolTipService.ToolTip="洛谷"
                         Click="OjToggle_Click">
                         <Image x:Name="LuoguIcon" Width="28" Height="28" />
-                    </ToggleButton>
-                    <ToggleButton
-                        x:Name="CodeforcesToggle"
-                        Tag="codeforces"
-                        IsChecked="True"
-                        Style="{StaticResource OjIconToggleStyle}"
-                        ToolTipService.ToolTip="Codeforces"
-                        Click="OjToggle_Click">
-                        <Image x:Name="CodeforcesIcon" Width="28" Height="28" />
                     </ToggleButton>
                     <ToggleButton
                         x:Name="AtCoderToggle"
@@ -456,6 +462,14 @@
                         <TextBlock x:Name="OjTipText" FontSize="12" />
                     </Border>
                 </Grid>
+                <TextBlock
+                    x:Name="OjSourceHint"
+                    Text="请至少打亮一个搜索源"
+                    FontSize="12"
+                    Margin="0,-8,0,0"
+                    HorizontalAlignment="Center"
+                    Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                    Visibility="Collapsed" />
             </StackPanel>
         </Grid>
 
@@ -598,8 +612,8 @@
             </Grid.RowDefinitions>
             <Grid
                 Grid.Row="0"
-                MaxWidth="780"
                 Padding="24,14,24,10"
+                MaxWidth="780"
                 HorizontalAlignment="Center"
                 ColumnSpacing="10">
                 <Grid.ColumnDefinitions>
@@ -635,7 +649,11 @@
                     IsActive="False"
                     Visibility="Collapsed" />
             </Grid>
-            <Grid Grid.Row="1" Width="780" HorizontalAlignment="Center" Margin="0,0,0,20">
+            <Grid
+                Grid.Row="1"
+                Width="780"
+                HorizontalAlignment="Center"
+                Margin="0,0,0,20">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
@@ -790,8 +808,8 @@
             </Grid.RowDefinitions>
             <Grid
                 Grid.Row="0"
-                MaxWidth="780"
                 Padding="24,14,24,10"
+                MaxWidth="780"
                 HorizontalAlignment="Center"
                 ColumnSpacing="10">
                 <Grid.ColumnDefinitions>
@@ -840,7 +858,7 @@
                 HorizontalAlignment="Center"
                 CornerRadius="10"
                 FontSize="13"
-                PlaceholderText="搜索题单"
+                PlaceholderText="搜索本板块所有题单里的题目"
                 TextChanged="TrainingSearch_TextChanged" />
             <GridView
                 x:Name="TrainingGrid"
@@ -858,6 +876,27 @@
                     </ItemsPanelTemplate>
                 </GridView.ItemsPanel>
             </GridView>
+            <ListView
+                x:Name="TrainingSearchResultList"
+                Grid.Row="2"
+                Width="780"
+                Margin="0,0,0,8"
+                HorizontalAlignment="Center"
+                IsItemClickEnabled="True"
+                ItemClick="TrainingSearchResult_ItemClick"
+                ItemTemplate="{StaticResource TrainingProblemTemplate}"
+                SelectionMode="None"
+                Visibility="Collapsed" />
+            <TextBlock
+                x:Name="TrainingSearchEmptyText"
+                Grid.Row="2"
+                Margin="0,40,0,0"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Top"
+                FontSize="12"
+                Opacity="0.5"
+                Text="没有匹配的题目"
+                Visibility="Collapsed" />
             <Button
                 x:Name="TrainingMoreButton"
                 Grid.Row="3"
@@ -883,8 +922,8 @@
             </Grid.RowDefinitions>
             <Grid
                 Grid.Row="0"
-                MaxWidth="720"
                 Padding="24,14,24,10"
+                MaxWidth="720"
                 HorizontalAlignment="Center"
                 ColumnSpacing="10">
                 <Grid.ColumnDefinitions>
@@ -976,6 +1015,7 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <Button
                     Grid.Column="0"
@@ -1013,8 +1053,18 @@
                         MaxLines="1" />
                 </StackPanel>
                 <Button
-                    x:Name="LoginButton"
+                    x:Name="TranslateButton"
                     Grid.Column="3"
+                    Height="30"
+                    Padding="12,0"
+                    CornerRadius="8"
+                    FontSize="12"
+                    Content="翻译"
+                    Visibility="Collapsed"
+                    Click="TranslateButton_Click" />
+                <Button
+                    x:Name="LoginButton"
+                    Grid.Column="4"
                     Height="30"
                     Padding="12,0"
                     CornerRadius="8"
@@ -1022,7 +1072,7 @@
                     Content="登录"
                     Click="LoginButton_Click" />
                 <Button
-                    Grid.Column="4"
+                    Grid.Column="5"
                     Height="30"
                     Padding="12,0"
                     CornerRadius="8"
@@ -1227,7 +1277,16 @@
                                 Grid.Row="1"
                                 MaxHeight="300"
                                 ItemTemplate="{StaticResource TestSampleItemTemplate}"
-                                SelectionMode="None" />
+                                SelectionMode="None">
+                                <ListView.ItemContainerStyle>
+                                    <Style TargetType="ListViewItem">
+                                        <Setter Property="MinHeight" Value="0" />
+                                        <Setter Property="Padding" Value="0" />
+                                        <Setter Property="Margin" Value="0,0,0,6" />
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    </Style>
+                                </ListView.ItemContainerStyle>
+                            </ListView>
                         </Grid>
 
                         <StackPanel
@@ -1373,7 +1432,12 @@
                                 Opacity="0.55" />
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                            <ProgressRing x:Name="LoginRing" Width="16" Height="16" IsActive="True" />
+                            <ProgressRing
+                                x:Name="LoginRing"
+                                Width="16"
+                                Height="16"
+                                IsActive="False"
+                                Visibility="Collapsed" />
                             <Button
                                 Width="30"
                                 Height="30"
