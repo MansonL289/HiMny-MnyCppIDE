@@ -1,4 +1,4 @@
-﻿﻿using System;
+﻿﻿﻿﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -40,7 +40,7 @@ public sealed partial class MainWindow : Window
     private bool _editorReady;
     private string? _activeActivity;
     private string? _rootFolderPath;
-    private AppSettings _settings = AppSettings.Load();
+    private AppSettings _settings;
 
     /// <summary>是否存在未保存的标签页（由编辑器的 tabsChanged 消息同步）。</summary>
     private bool _hasUnsavedFiles;
@@ -55,6 +55,7 @@ public sealed partial class MainWindow : Window
 
     public MainWindow()
     {
+        _settings = AppSettings.Load(out bool loadedExisting);
         InitializeComponent();
 
         Title = "MnyC++ IDE";
@@ -63,6 +64,17 @@ public sealed partial class MainWindow : Window
         // 窗口：屏幕工作区的 2/3 并居中；按 DPI 换算成逻辑尺寸并保底，
         // 避免高分屏笔记本上 2/3 物理像素太小、界面挤成一团
         var workArea = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
+        if (loadedExisting)
+        {
+            // 老版本允许任意百分比，升级后就近归入新档位，不覆盖用户的大致缩放选择。
+            _settings.UiZoom = AppSettings.NormalizeUiZoom(_settings.UiZoom);
+        }
+        else
+        {
+            _settings.UiZoom = AppSettings.GetRecommendedUiZoom(workArea.Width, workArea.Height);
+            _settings.Save();
+        }
+
         double scale = GetDisplayScale();
         int logicalW = Math.Max(1, (int)(workArea.Width / scale));
         int logicalH = Math.Max(1, (int)(workArea.Height / scale));
@@ -101,6 +113,7 @@ public sealed partial class MainWindow : Window
         // 设置面板：关闭时隐藏，任何改动立即保存并同步给编辑器页面
         SettingsViewControl.CloseRequested += HideSettings;
         SettingsViewControl.SettingsChanged += OnSettingsChanged;
+        PracticeViewControl.SettingsChanged += OnSettingsChanged;
 
         // 启动时套用保存下来的应用主题
         ApplyAppTheme();
@@ -198,11 +211,19 @@ public sealed partial class MainWindow : Window
 
     private async void RootGrid_Loaded(object sender, RoutedEventArgs e)
     {
-        UpdateTitleBarPadding();
-        UpdateActivityVisuals();
-        // 先确定欢迎页状态并补播入场动画，避免「先显示出来、编辑器初始化完再重播一次」的闪一下
-        UpdateWelcomeVisibility(tabCount: 0);
-        await InitializeEditorAsync();
+        try
+        {
+            UpdateTitleBarPadding();
+            UpdateActivityVisuals();
+            // 先确定欢迎页状态并补播入场动画，避免「先显示出来、编辑器初始化完再重播一次」的闪一下
+            UpdateWelcomeVisibility(tabCount: 0);
+            await InitializeEditorAsync();
+        }
+        catch (Exception ex)
+        {
+            // async void 入口异常会直接崩溃进程，启动关键路径做兜底
+            System.Diagnostics.Debug.WriteLine("RootGrid_Loaded: " + ex);
+        }
     }
 
     /* ---------------- 欢迎页 ---------------- */
@@ -645,15 +666,24 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        if (tag.StartsWith("action:", StringComparison.Ordinal))
+        try
         {
-            RunEditorAction(tag["action:".Length..]);
-            return;
-        }
+            if (tag.StartsWith("action:", StringComparison.Ordinal))
+            {
+                RunEditorAction(tag["action:".Length..]);
+                return;
+            }
 
-        if (tag.StartsWith("cmd:", StringComparison.Ordinal))
+            if (tag.StartsWith("cmd:", StringComparison.Ordinal))
+            {
+                await RunCommandAsync(tag["cmd:".Length..]);
+            }
+        }
+        catch (Exception ex)
         {
-            await RunCommandAsync(tag["cmd:".Length..]);
+            // async void 入口异常兜底，避免直接崩溃进程
+            System.Diagnostics.Debug.WriteLine("MenuCommand_Click: " + ex);
+            ShowHostMessage("操作失败：" + ex.Message);
         }
     }
 
@@ -2184,11 +2214,13 @@ public sealed partial class MainWindow : Window
 
     private void OnSettingsChanged()
     {
-        _settings.Save();
-        ApplyAppTheme();
+        // 先同步编辑器：高亮类设置必须在 100ms 内到达 Monaco，
+        // 主题切换和落盘放后面，避免磁盘 IO 和重新布局占用这段预算
         SendSettingsToEditor();
         SettingsViewControl.ApplyAppearance(_settings);
         PracticeViewControl.ApplySettings(_settings);
+        ApplyAppTheme();
+        _settings.Save();
     }
 
     /// <summary>按设置切换应用主题（跟随系统时交给系统决定）。</summary>
@@ -2262,10 +2294,14 @@ public sealed partial class MainWindow : Window
         }
 
         double? uiZoom = message["uiZoom"]?.GetValue<double>();
-        if (uiZoom is not null && Math.Abs(uiZoom.Value - _settings.UiZoom) > 0.001)
+        if (uiZoom is not null)
         {
-            _settings.UiZoom = Math.Clamp(uiZoom.Value, 0.5, 2.0);
-            changed = true;
+            double normalizedZoom = AppSettings.NormalizeUiZoom(uiZoom.Value);
+            if (Math.Abs(normalizedZoom - _settings.UiZoom) > 0.001)
+            {
+                _settings.UiZoom = normalizedZoom;
+                changed = true;
+            }
         }
 
         if (!changed)
@@ -2550,7 +2586,15 @@ public sealed partial class MainWindow : Window
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
 
-            await process.WaitForExitAsync();
+            // 编译加超时，防止 g++ 异常卡死时只能干等
+            Task exitTask = process.WaitForExitAsync();
+            Task finished = await Task.WhenAny(exitTask, Task.Delay(TimeSpan.FromSeconds(120)));
+            if (finished != exitTask)
+            {
+                try { process.Kill(entireProcessTree: true); } catch { /* 进程已退出 */ }
+                SendBuildOutput("[编译超时（120s），已终止]");
+            }
+
             process.WaitForExit(); // 等异步读取把剩余输出吐完
 
             int exitCode = process.ExitCode;

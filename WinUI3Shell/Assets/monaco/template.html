@@ -229,12 +229,24 @@
           // 外观跟随设置页里的编辑器设置，预览与主编辑器保持一致
           if (message.type === 'appearance') {
             if (typeof message.theme === 'string') { theme = message.theme; }
+            const options = {};
             if (typeof message.fontFamily === 'string' && message.fontFamily.length > 0) {
-              editor.updateOptions({ fontFamily: message.fontFamily });
+              options.fontFamily = message.fontFamily;
             }
             if (typeof message.fontSize === 'number') {
-              editor.updateOptions({ fontSize: message.fontSize });
+              options.fontSize = message.fontSize;
             }
+            if (typeof message.fontLigatures === 'boolean') {
+              options.fontLigatures = message.fontLigatures;
+            }
+            // 与主编辑器共用设置项：括号配对着色、标识符高亮
+            if (typeof message.bracketColorization === 'boolean') {
+              options.bracketPairColorization = { enabled: message.bracketColorization };
+            }
+            if (typeof message.occurrencesHighlight === 'boolean') {
+              options.occurrencesHighlight = message.occurrencesHighlight ? 'singleFile' : 'off';
+            }
+            editor.updateOptions(options);
             applyTheme();
           }
         });

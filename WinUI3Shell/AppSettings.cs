@@ -32,8 +32,37 @@ public sealed class AppSettings
     /// <summary>编辑器主题：system / dark / light。</summary>
     public string EditorTheme { get; set; } = "system";
 
-    /// <summary>整个编程界面（标签栏、编辑器、终端）的缩放比例，0.5 ~ 2.0。</summary>
+    public const double MinimumUiZoom = 0.5;
+    public const double MaximumUiZoom = 2.0;
+    public const double UiZoomStep = 0.25;
+
+    /// <summary>编辑器与刷题内容的缩放比例，按 25% 档位调整。</summary>
     public double UiZoom { get; set; } = 1.0;
+
+    /// <summary>把旧版任意百分比就近归入 25% 档位，并限制在原有有效范围内。</summary>
+    public static double NormalizeUiZoom(double value)
+    {
+        if (!double.IsFinite(value))
+        {
+            return 1.0;
+        }
+
+        double snapped = Math.Round(value / UiZoomStep, MidpointRounding.AwayFromZero) * UiZoomStep;
+        return Math.Clamp(snapped, MinimumUiZoom, MaximumUiZoom);
+    }
+
+    /// <summary>首次启动按当前屏幕工作区估算缩放：3840×2160 对应 100%。</summary>
+    public static double GetRecommendedUiZoom(double pixelWidth, double pixelHeight)
+    {
+        if (pixelWidth <= 0 || pixelHeight <= 0)
+        {
+            return 1.0;
+        }
+
+        // 等比例分辨率按宽度比计算；不同宽高比用面积折算，避免超宽屏被过度缩小。
+        double resolutionScale = Math.Sqrt(pixelWidth / 3840.0 * (pixelHeight / 2160.0));
+        return NormalizeUiZoom(resolutionScale);
+    }
 
     /* ---------------- 编辑器（Monaco） ---------------- */
 
@@ -141,8 +170,13 @@ public sealed class AppSettings
     /// <summary>搜索结果默认排序：SubmitAsc / SubmitDesc / PassRateAsc / PassRateDesc / DifficultyAsc / DifficultyDesc / TitleAsc。</summary>
     public string PracticeSortMode { get; set; } = "SubmitAsc";
 
-    public static AppSettings Load()
+    public static AppSettings Load() => Load(out _);
+
+    /// <summary>loadedExisting 仅在实际读到有效旧配置时为 true，供首次启动自动缩放使用。</summary>
+    public static AppSettings Load(out bool loadedExisting)
     {
+        loadedExisting = false;
+
         // 多个候选位置同时存在时，以最近修改的那份为准
         string? newest = null;
         DateTime newestTime = DateTime.MinValue;
@@ -171,7 +205,12 @@ public sealed class AppSettings
             try
             {
                 string json = File.ReadAllText(newest);
-                return JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+                AppSettings? settings = JsonSerializer.Deserialize<AppSettings>(json);
+                if (settings is not null)
+                {
+                    loadedExisting = true;
+                    return settings;
+                }
             }
             catch
             {

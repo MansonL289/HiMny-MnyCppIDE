@@ -94,10 +94,24 @@ public sealed class OjConfig
         Ojs.FirstOrDefault(oj => string.Equals(oj.Id, id, StringComparison.OrdinalIgnoreCase));
 }
 
+/// <summary>洛谷题目在当前账号下的答题状态（来自题目列表 DOM 的 status 列）。</summary>
+public enum LuoguAnswerState
+{
+    /// <summary>尚未取到（非洛谷题目或状态列读取失败）。</summary>
+    Unknown,
+    /// <summary>已答对。</summary>
+    Accepted,
+    /// <summary>答错（有提交记录但未通过）。</summary>
+    Wrong,
+    /// <summary>无作答记录。</summary>
+    Untouched,
+}
+
 public sealed class OjProblemItem : INotifyPropertyChanged
 {
     private ImageSource? _icon;
     private bool _isStarred;
+    private LuoguAnswerState _answerState;
 
     public string OjId { get; set; } = string.Empty;
     public string OjName { get; set; } = string.Empty;
@@ -142,6 +156,53 @@ public sealed class OjProblemItem : INotifyPropertyChanged
         7 => Color.FromArgb(0xFF, 0x0E, 0x1D, 0x69),
         _ => Color.FromArgb(0, 0, 0, 0),
     });
+
+    /// <summary>洛谷答题状态：已答对 / 答错 / 未作答。</summary>
+    public LuoguAnswerState AnswerState
+    {
+        get => _answerState;
+        set
+        {
+            if (_answerState == value)
+            {
+                return;
+            }
+
+            _answerState = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AnswerState)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AnswerStateGlyph)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AnswerStateBrush)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AnswerStateTip)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AnswerStateVisibility)));
+        }
+    }
+
+    public string AnswerStateGlyph => _answerState switch
+    {
+        LuoguAnswerState.Accepted => "\uE73E",
+        LuoguAnswerState.Wrong => "\uE711",
+        LuoguAnswerState.Untouched => "\uE738",
+        _ => string.Empty,
+    };
+
+    public Brush AnswerStateBrush => new SolidColorBrush(_answerState switch
+    {
+        LuoguAnswerState.Accepted => Color.FromArgb(0xFF, 0x2F, 0xA8, 0x4F),
+        LuoguAnswerState.Wrong => Color.FromArgb(0xFF, 0xD1, 0x34, 0x38),
+        LuoguAnswerState.Untouched => Color.FromArgb(0xFF, 0x8A, 0x88, 0x86),
+        _ => Color.FromArgb(0, 0, 0, 0),
+    });
+
+    public string AnswerStateTip => _answerState switch
+    {
+        LuoguAnswerState.Accepted => "已答对",
+        LuoguAnswerState.Wrong => "答错",
+        LuoguAnswerState.Untouched => "未作答",
+        _ => string.Empty,
+    };
+
+    public Visibility AnswerStateVisibility =>
+        _answerState == LuoguAnswerState.Unknown ? Visibility.Collapsed : Visibility.Visible;
 
     /// <summary>列表左侧的平台图标（跟随明暗主题切换）。</summary>
     public ImageSource? Icon

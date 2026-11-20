@@ -6,6 +6,11 @@
     xmlns:oj="using:WinUI3Shell.Oj">
 
     <UserControl.Resources>
+        <!-- 界面图标统一用系统实际存在的图标字体（Windows 10 无 Segoe Fluent Icons） -->
+        <Style TargetType="FontIcon">
+            <Setter Property="FontFamily" Value="{StaticResource IconFontFamily}" />
+        </Style>
+
         <!-- OJ 筛选：只有图标，选中/未选中靠不透明度区分，不用彩色胶囊 -->
         <Style x:Key="OjIconToggleStyle" TargetType="ToggleButton">
             <Setter Property="Width" Value="44" />
@@ -69,6 +74,80 @@
             </Setter>
         </Style>
 
+        <!-- 洛谷筛选面板：标签胶囊 -->
+        <Style x:Key="LuoguFilterChipStyle" TargetType="ToggleButton">
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="CornerRadius" Value="6" />
+        </Style>
+
+        <!-- 洛谷筛选面板：顶部标签页，选中时显示强调色下划线 -->
+        <Style x:Key="LuoguFilterTabStyle" TargetType="ToggleButton">
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="Height" Value="34" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Grid Background="Transparent">
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup x:Name="CommonStates">
+                                    <VisualState x:Name="Normal" />
+                                    <VisualState x:Name="PointerOver">
+                                        <VisualState.Setters>
+                                            <Setter Target="TabContent.Opacity" Value="0.85" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Pressed">
+                                        <VisualState.Setters>
+                                            <Setter Target="TabContent.Opacity" Value="1" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Disabled" />
+                                    <VisualState x:Name="Checked">
+                                        <VisualState.Setters>
+                                            <Setter Target="TabUnderline.Background" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+                                            <Setter Target="TabContent.Opacity" Value="1" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="CheckedPointerOver">
+                                        <VisualState.Setters>
+                                            <Setter Target="TabUnderline.Background" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+                                            <Setter Target="TabContent.Opacity" Value="1" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="CheckedPressed">
+                                        <VisualState.Setters>
+                                            <Setter Target="TabUnderline.Background" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+                                            <Setter Target="TabContent.Opacity" Value="1" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                            <ContentPresenter
+                                x:Name="TabContent"
+                                Margin="0,0,0,2"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Content="{TemplateBinding Content}"
+                                Opacity="0.6" />
+                            <Border
+                                x:Name="TabUnderline"
+                                Height="2"
+                                VerticalAlignment="Bottom"
+                                Background="Transparent"
+                                CornerRadius="1" />
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <DataTemplate x:Key="ProblemItemTemplate" x:DataType="oj:OjProblemItem">
             <Grid ColumnSpacing="10" Padding="2,4" AutomationProperties.Name="{x:Bind DisplayName}">
                 <Grid.ColumnDefinitions>
@@ -115,6 +194,69 @@
                 </Button>
                 <TextBlock
                     Grid.Column="3"
+                    VerticalAlignment="Center"
+                    Text="{x:Bind Id}"
+                    FontSize="11"
+                    Opacity="0.5" />
+            </Grid>
+        </DataTemplate>
+
+        <!-- 洛谷题目：最左侧展示当前账号的答题状态（已答对 / 答错 / 未作答） -->
+        <DataTemplate x:Key="LuoguProblemItemTemplate" x:DataType="oj:OjProblemItem">
+            <Grid ColumnSpacing="10" Padding="2,4" AutomationProperties.Name="{x:Bind DisplayName}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="18" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <FontIcon
+                    Grid.Column="0"
+                    VerticalAlignment="Center"
+                    FontSize="14"
+                    Glyph="{x:Bind AnswerStateGlyph, Mode=OneWay}"
+                    Foreground="{x:Bind AnswerStateBrush, Mode=OneWay}"
+                    Visibility="{x:Bind AnswerStateVisibility, Mode=OneWay}"
+                    ToolTipService.ToolTip="{x:Bind AnswerStateTip, Mode=OneWay}" />
+                <Image
+                    Grid.Column="1"
+                    Width="20"
+                    Height="20"
+                    VerticalAlignment="Center"
+                    Opacity="0.9"
+                    Source="{x:Bind Icon, Mode=OneWay}" />
+                <StackPanel Grid.Column="2" Spacing="1">
+                    <TextBlock
+                        Text="{x:Bind Title}"
+                        TextTrimming="CharacterEllipsis"
+                        MaxLines="1"
+                        FontSize="13" />
+                    <TextBlock
+                        Text="{x:Bind Meta}"
+                        TextTrimming="CharacterEllipsis"
+                        MaxLines="1"
+                        FontSize="11"
+                        Opacity="0.6" />
+                </StackPanel>
+                <Button
+                    Grid.Column="3"
+                    Width="28"
+                    Height="28"
+                    Padding="0"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    CornerRadius="6"
+                    Click="StarResult_Click"
+                    Tag="{x:Bind Key}"
+                    ToolTipService.ToolTip="标星">
+                    <FontIcon
+                        Glyph="{x:Bind StarGlyph, Mode=OneWay}"
+                        FontSize="14"
+                        Foreground="{x:Bind StarForeground, Mode=OneWay}" />
+                </Button>
+                <TextBlock
+                    Grid.Column="4"
                     VerticalAlignment="Center"
                     Text="{x:Bind Id}"
                     FontSize="11"
@@ -324,21 +466,61 @@
     <Grid x:Name="PracticeRoot" KeyDown="PracticeRoot_KeyDown" Background="Transparent">
         <!-- 首页：大标题 + 搜索框 + OJ 图标筛选 -->
         <Grid x:Name="HomePanel" Padding="0,0,0,40" AutomationProperties.AutomationId="PracticeHomePanel">
-            <Button
-                x:Name="HomeStarButton"
-                Width="40"
-                Height="40"
-                Padding="0"
+            <!-- 右上角：三个平台的登录状态 + 登录入口 + 标星入口 -->
+            <StackPanel
+                Orientation="Horizontal"
+                Spacing="10"
                 Margin="0,24,28,0"
                 HorizontalAlignment="Right"
-                VerticalAlignment="Top"
-                Background="Transparent"
-                BorderThickness="0"
-                CornerRadius="10"
-                Click="HomeStarButton_Click"
-                ToolTipService.ToolTip="标星题目">
-                <FontIcon Glyph="&#xE734;" FontSize="18" Opacity="0.7" />
-            </Button>
+                VerticalAlignment="Top">
+                <StackPanel
+                    Orientation="Horizontal"
+                    Spacing="12"
+                    VerticalAlignment="Center"
+                    Margin="0,0,2,0"
+                    AutomationProperties.AutomationId="PracticeLoginStatusStrip">
+                    <StackPanel Orientation="Horizontal" Spacing="5" ToolTipService.ToolTip="洛谷登录状态">
+                        <Image x:Name="LuoguStatusIcon" Width="16" Height="16" VerticalAlignment="Center" />
+                        <Ellipse x:Name="LuoguStatusDot" Width="7" Height="7" VerticalAlignment="Center" Fill="#8A8A8A" />
+                        <TextBlock x:Name="LuoguStatusLabel" Text="未登录" FontSize="11" Opacity="0.6" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="5" ToolTipService.ToolTip="AtCoder 登录状态">
+                        <Image x:Name="AtCoderStatusIcon" Width="16" Height="16" VerticalAlignment="Center" />
+                        <Ellipse x:Name="AtCoderStatusDot" Width="7" Height="7" VerticalAlignment="Center" Fill="#8A8A8A" />
+                        <TextBlock x:Name="AtCoderStatusLabel" Text="未登录" FontSize="11" Opacity="0.6" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="5" ToolTipService.ToolTip="牛客登录状态">
+                        <Image x:Name="NowCoderStatusIcon" Width="16" Height="16" VerticalAlignment="Center" />
+                        <Ellipse x:Name="NowCoderStatusDot" Width="7" Height="7" VerticalAlignment="Center" Fill="#8A8A8A" />
+                        <TextBlock x:Name="NowCoderStatusLabel" Text="未登录" FontSize="11" Opacity="0.6" VerticalAlignment="Center" />
+                    </StackPanel>
+                </StackPanel>
+                <Button
+                    x:Name="HomeLoginButton"
+                    Height="36"
+                    Padding="14,0"
+                    CornerRadius="10"
+                    Click="HomeLoginButton_Click"
+                    ToolTipService.ToolTip="登录刷题平台"
+                    AutomationProperties.AutomationId="PracticeHomeLoginButton">
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <FontIcon Glyph="&#xE77B;" FontSize="14" VerticalAlignment="Center" />
+                        <TextBlock Text="登录" FontSize="13" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Button
+                    x:Name="HomeStarButton"
+                    Width="40"
+                    Height="36"
+                    Padding="0"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    CornerRadius="10"
+                    Click="HomeStarButton_Click"
+                    ToolTipService.ToolTip="标星题目">
+                    <FontIcon Glyph="&#xE734;" FontSize="18" Opacity="0.7" />
+                </Button>
+            </StackPanel>
             <StackPanel
                 x:Name="HomeStack"
                 HorizontalAlignment="Center"
@@ -364,7 +546,7 @@
                     HorizontalAlignment="Center">
                     <TextBox
                         x:Name="SearchBox"
-                        Padding="16,13,52,13"
+                        Padding="52,13,16,13"
                         PlaceholderText="搜索题目"
                         FontSize="15"
                         Height="46"
@@ -374,9 +556,9 @@
                     <Button
                         Width="36"
                         Height="36"
-                        Margin="0,0,5,0"
+                        Margin="5,0,0,0"
                         Padding="0"
-                        HorizontalAlignment="Right"
+                        HorizontalAlignment="Left"
                         VerticalAlignment="Center"
                         Background="Transparent"
                         BorderThickness="0"
@@ -416,8 +598,8 @@
                         </StackPanel>
                     </Button>
                 </StackPanel>
-                <Grid HorizontalAlignment="Center" Margin="0,2,0,0">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
+                <Grid Width="220" Height="44" HorizontalAlignment="Center" Margin="0,2,0,0">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                     <ToggleButton
                         x:Name="LuoguToggle"
                         Tag="luogu"
@@ -449,6 +631,7 @@
                     <!-- 提示气泡：纯展示、不拦截输入，点击可穿透到下面的控件 -->
                     <Border
                         x:Name="OjTipBubble"
+                        Width="220"
                         VerticalAlignment="Bottom"
                         HorizontalAlignment="Center"
                         Margin="0,0,0,-38"
@@ -458,7 +641,7 @@
                         BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
                         BorderThickness="1"
                         IsHitTestVisible="False"
-                        Visibility="Collapsed">
+                        Opacity="0">
                         <TextBlock x:Name="OjTipText" FontSize="12" />
                     </Border>
                 </Grid>
@@ -466,11 +649,254 @@
                     x:Name="OjSourceHint"
                     Text="请至少打亮一个搜索源"
                     FontSize="12"
+                    Height="18"
                     Margin="0,-8,0,0"
                     HorizontalAlignment="Center"
                     Foreground="{ThemeResource SystemFillColorCautionBrush}"
-                    Visibility="Collapsed" />
+                    Opacity="0" />
+                <Button
+                    x:Name="LuoguModuleButton"
+                    Height="38"
+                    Padding="18,0"
+                    Margin="0,2,0,0"
+                    HorizontalAlignment="Center"
+                    CornerRadius="10"
+                    Click="LuoguModuleButton_Click"
+                    ToolTipService.ToolTip="进入独立的洛谷刷题模式"
+                    AutomationProperties.AutomationId="PracticeLuoguModuleButton">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Image
+                            x:Name="LuoguModuleIcon"
+                            Width="20"
+                            Height="20"
+                            VerticalAlignment="Center" />
+                        <TextBlock
+                            Text="洛谷刷题模式"
+                            FontSize="13"
+                            VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
             </StackPanel>
+        </Grid>
+
+        <!-- 洛谷独立刷题模式 -->
+        <Grid x:Name="LuoguPanel" Visibility="Collapsed" AutomationProperties.AutomationId="PracticeLuoguPanel">
+            <Grid.RenderTransform>
+                <TranslateTransform x:Name="LuoguTransform" />
+            </Grid.RenderTransform>
+            <Button
+                Width="40"
+                Height="40"
+                Padding="0"
+                Margin="20,20,0,0"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Background="Transparent"
+                BorderThickness="0"
+                CornerRadius="10"
+                Click="LuoguBack_Click"
+                ToolTipService.ToolTip="返回刷题模式">
+                <FontIcon Glyph="&#xE72B;" FontSize="16" Opacity="0.7" />
+            </Button>
+            <StackPanel
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Spacing="16">
+                <StackPanel
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Center"
+                    Spacing="12">
+                    <TextBlock
+                        Text="刷题模式"
+                        FontSize="46"
+                        FontWeight="SemiBold"
+                        VerticalAlignment="Center" />
+                    <Image
+                        x:Name="LuoguTitleIcon"
+                        Width="38"
+                        Height="38"
+                        VerticalAlignment="Center"
+                        Opacity="0.9" />
+                </StackPanel>
+                <TextBlock
+                    FontSize="13"
+                    HorizontalAlignment="Center"
+                    Margin="0,-10,0,0"
+                    Opacity="0.45"><Run Text="洛谷模式" /><Run Text=" - Beta" FontWeight="Bold" /></TextBlock>
+                <Grid Width="440" HorizontalAlignment="Center">
+                    <TextBox
+                        x:Name="LuoguSearchBox"
+                        Height="46"
+                        Padding="52,13,52,13"
+                        PlaceholderText="搜索洛谷题目"
+                        FontSize="15"
+                        CornerRadius="12"
+                        KeyDown="LuoguSearchBox_KeyDown"
+                        AutomationProperties.AutomationId="LuoguSearchBox" />
+                    <Button
+                        Width="36"
+                        Height="36"
+                        Margin="5,0,0,0"
+                        Padding="0"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Center"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        CornerRadius="8"
+                        Click="LuoguSearchSubmit_Click"
+                        ToolTipService.ToolTip="搜索洛谷">
+                        <FontIcon Glyph="&#xE721;" FontSize="15" />
+                    </Button>
+                    <Button
+                        Width="36"
+                        Height="36"
+                        Margin="0,0,5,0"
+                        Padding="0"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Center"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        CornerRadius="8"
+                        Click="LuoguFilterButton_Click"
+                        ToolTipService.ToolTip="洛谷官方筛选"
+                        AutomationProperties.AutomationId="LuoguFilterButton">
+                        <FontIcon Glyph="&#xE71C;" FontSize="15" />
+                    </Button>
+                </Grid>
+                <StackPanel
+                    Orientation="Horizontal"
+                    Spacing="10"
+                    HorizontalAlignment="Center">
+                    <Button
+                        x:Name="LuoguRandomButton"
+                        Height="38"
+                        Padding="18,0"
+                        CornerRadius="10"
+                        Click="LuoguRandomButton_Click"
+                        AutomationProperties.AutomationId="LuoguRandomButton">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <FontIcon Glyph="&#xE8B1;" FontSize="14" VerticalAlignment="Center" />
+                            <TextBlock Text="随机抽题" FontSize="13" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button
+                        Height="38"
+                        Padding="18,0"
+                        CornerRadius="10"
+                        Click="LuoguTrainingButton_Click"
+                        AutomationProperties.AutomationId="LuoguTrainingButton">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <FontIcon Glyph="&#xE8FD;" FontSize="14" VerticalAlignment="Center" />
+                            <TextBlock Text="洛谷题单" FontSize="13" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+                <StackPanel
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    HorizontalAlignment="Center">
+                    <TextBox
+                        x:Name="LuoguIdBox"
+                        Width="300"
+                        Height="38"
+                        Padding="14,8,14,8"
+                        PlaceholderText="输入题号直达，例如 P1001"
+                        FontSize="13"
+                        CornerRadius="10"
+                        KeyDown="LuoguIdBox_KeyDown"
+                        AutomationProperties.AutomationId="LuoguIdBox" />
+                    <Button
+                        Height="38"
+                        Padding="18,0"
+                        CornerRadius="10"
+                        Content="直达"
+                        FontSize="13"
+                        Click="LuoguGoButton_Click"
+                        AutomationProperties.AutomationId="LuoguGoButton" />
+                </StackPanel>
+                <TextBlock
+                    x:Name="LuoguFilterSummary"
+                    FontSize="12"
+                    HorizontalAlignment="Center"
+                    Opacity="0.5"
+                    Text="筛选：未设置" />
+                <TextBlock
+                    x:Name="LuoguHintText"
+                    Height="18"
+                    FontSize="12"
+                    HorizontalAlignment="Center"
+                    Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                    Opacity="0" />
+            </StackPanel>
+        </Grid>
+
+        <!-- 洛谷专属搜索结果 -->
+        <Grid x:Name="LuoguResultsPanel" Visibility="Collapsed" AutomationProperties.AutomationId="LuoguResultsPanel">
+            <Grid.RenderTransform>
+                <TranslateTransform x:Name="LuoguResultsTransform" />
+            </Grid.RenderTransform>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Grid
+                Grid.Row="0"
+                Padding="24,14,24,10"
+                ColumnSpacing="10"
+                MaxWidth="720"
+                HorizontalAlignment="Center">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Button
+                    Grid.Column="0"
+                    Width="32"
+                    Height="32"
+                    Padding="0"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    CornerRadius="8"
+                    Click="LuoguResultsBack_Click"
+                    ToolTipService.ToolTip="返回洛谷模式">
+                    <FontIcon Glyph="&#xE72B;" FontSize="15" />
+                </Button>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                    <TextBlock
+                        x:Name="LuoguResultTitle"
+                        FontSize="15"
+                        FontWeight="SemiBold"
+                        Text="洛谷搜索结果" />
+                    <TextBlock
+                        x:Name="LuoguResultStatus"
+                        FontSize="11"
+                        Opacity="0.55" />
+                </StackPanel>
+            </Grid>
+            <ListView
+                x:Name="LuoguResultList"
+                Grid.Row="1"
+                Width="720"
+                MaxWidth="720"
+                Margin="0,0,0,20"
+                HorizontalAlignment="Center"
+                CornerRadius="10"
+                IsItemClickEnabled="True"
+                ItemClick="LuoguResultList_ItemClick"
+                SelectionMode="None"
+                ItemTemplate="{StaticResource LuoguProblemItemTemplate}"
+                AutomationProperties.AutomationId="LuoguResultList" />
+            <TextBlock
+                x:Name="LuoguResultEmptyText"
+                Grid.Row="1"
+                Margin="0,80,0,0"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Top"
+                FontSize="13"
+                Opacity="0.55"
+                TextWrapping="Wrap"
+                TextAlignment="Center"
+                Visibility="Collapsed" />
         </Grid>
 
         <!-- 搜索结果 -->
@@ -1015,7 +1441,6 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <Button
                     Grid.Column="0"
@@ -1063,16 +1488,7 @@
                     Visibility="Collapsed"
                     Click="TranslateButton_Click" />
                 <Button
-                    x:Name="LoginButton"
                     Grid.Column="4"
-                    Height="30"
-                    Padding="12,0"
-                    CornerRadius="8"
-                    FontSize="12"
-                    Content="登录"
-                    Click="LoginButton_Click" />
-                <Button
-                    Grid.Column="5"
                     Height="30"
                     Padding="12,0"
                     CornerRadius="8"
@@ -1164,6 +1580,192 @@
                     </StackPanel>
                 </Grid>
             </Grid>
+        </Grid>
+
+        <!-- 洛谷官方筛选面板：分类标签 + 难度 -->
+        <Grid
+            x:Name="LuoguFilterOverlay"
+            Background="#66000000"
+            Visibility="Collapsed"
+            AutomationProperties.AutomationId="LuoguFilterOverlay">
+            <Border
+                Width="720"
+                MaxHeight="640"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
+                BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="12">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- 标题 -->
+                    <Grid Grid.Row="0" Padding="20,16,12,8">
+                        <TextBlock
+                            Text="选择标签"
+                            FontSize="17"
+                            FontWeight="SemiBold"
+                            VerticalAlignment="Center" />
+                        <Button
+                            Width="30"
+                            Height="30"
+                            Padding="0"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Center"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            CornerRadius="8"
+                            Click="CloseLuoguFilter_Click"
+                            ToolTipService.ToolTip="关闭">
+                            <FontIcon Glyph="&#xE711;" FontSize="12" />
+                        </Button>
+                    </Grid>
+
+                    <!-- 题目难度 -->
+                    <StackPanel Grid.Row="1" Padding="20,0,20,8" Spacing="6">
+                        <TextBlock
+                            Text="题目难度"
+                            FontSize="12"
+                            Opacity="0.6" />
+                        <StackPanel x:Name="DifficultyChipsHost" Spacing="8" />
+                    </StackPanel>
+
+                    <!-- 算法 / 来源 / 时间 / 区域 / 特殊题目 -->
+                    <StackPanel
+                        Grid.Row="2"
+                        Padding="20,4,20,0"
+                        Orientation="Horizontal"
+                        Spacing="2">
+                        <ToggleButton
+                            x:Name="FilterTabAlgorithm"
+                            Tag="2"
+                            Content="算法"
+                            IsChecked="True"
+                            Style="{StaticResource LuoguFilterTabStyle}"
+                            Click="FilterTab_Click" />
+                        <ToggleButton
+                            x:Name="FilterTabSource"
+                            Tag="3"
+                            Content="来源"
+                            Style="{StaticResource LuoguFilterTabStyle}"
+                            Click="FilterTab_Click" />
+                        <ToggleButton
+                            x:Name="FilterTabTime"
+                            Tag="4"
+                            Content="时间"
+                            Style="{StaticResource LuoguFilterTabStyle}"
+                            Click="FilterTab_Click" />
+                        <ToggleButton
+                            x:Name="FilterTabRegion"
+                            Tag="1"
+                            Content="区域"
+                            Style="{StaticResource LuoguFilterTabStyle}"
+                            Click="FilterTab_Click" />
+                        <ToggleButton
+                            x:Name="FilterTabSpecial"
+                            Tag="5"
+                            Content="特殊题目"
+                            Style="{StaticResource LuoguFilterTabStyle}"
+                            Click="FilterTab_Click" />
+                    </StackPanel>
+
+                    <!-- 已选 + 标签搜索 -->
+                    <Grid Grid.Row="3" Padding="20,10,20,8" RowSpacing="8">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid Grid.Row="0" ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock
+                                x:Name="FilterSelectedText"
+                                FontSize="12"
+                                VerticalAlignment="Center"
+                                Text="已选标签（0）" />
+                            <Button
+                                Grid.Column="1"
+                                Height="28"
+                                Padding="10,0"
+                                CornerRadius="6"
+                                FontSize="12"
+                                Content="清除"
+                                Click="ClearLuoguFilter_Click" />
+                        </Grid>
+                        <TextBlock
+                            x:Name="FilterSelectedNames"
+                            Grid.Row="1"
+                            FontSize="11"
+                            MaxLines="2"
+                            Opacity="0.55"
+                            TextTrimming="CharacterEllipsis"
+                            TextWrapping="Wrap" />
+                        <TextBox
+                            x:Name="FilterSearchBox"
+                            Grid.Row="2"
+                            Height="36"
+                            Padding="12,7,12,7"
+                            PlaceholderText="搜索全部标签"
+                            FontSize="12"
+                            CornerRadius="8"
+                            TextChanged="FilterSearchBox_TextChanged" />
+                    </Grid>
+
+                    <!-- 标签分组 -->
+                    <ScrollViewer
+                        Grid.Row="4"
+                        Padding="20,0,20,0"
+                        VerticalScrollBarVisibility="Auto">
+                        <StackPanel
+                            x:Name="FilterTagHost"
+                            Margin="0,4,0,12"
+                            Spacing="14" />
+                    </ScrollViewer>
+
+                    <!-- 底部 -->
+                    <Grid Grid.Row="5" Padding="20,12,20,16" ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            FontSize="11"
+                            VerticalAlignment="Center"
+                            Opacity="0.45"
+                            Text="条件来自洛谷官方题库" />
+                        <Button
+                            Grid.Column="1"
+                            Height="32"
+                            Padding="16,0"
+                            CornerRadius="8"
+                            FontSize="12"
+                            Content="取消"
+                            Click="CloseLuoguFilter_Click" />
+                        <Button
+                            Grid.Column="2"
+                            Height="32"
+                            Padding="20,0"
+                            CornerRadius="8"
+                            FontSize="12"
+                            Content="确认"
+                            Style="{StaticResource AccentButtonStyle}"
+                            Click="ConfirmLuoguFilter_Click"
+                            AutomationProperties.AutomationId="LuoguFilterConfirmButton" />
+                    </Grid>
+                </Grid>
+            </Border>
         </Grid>
 
         <!-- 测试浮层 -->
@@ -1395,6 +1997,114 @@
                             AutomationProperties.AutomationId="PracticeRunTestButton" />
                     </Grid>
                 </Grid>
+            </Border>
+        </Grid>
+
+        <!-- 登录平台选择：主页登录入口点开后先选平台 -->
+        <Grid
+            x:Name="LoginPlatformOverlay"
+            Background="#66000000"
+            Visibility="Collapsed"
+            AutomationProperties.AutomationId="PracticeLoginPlatformOverlay">
+            <Border
+                Width="440"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
+                BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="12">
+                <StackPanel Padding="22,20,22,22" Spacing="14">
+                    <Grid>
+                        <StackPanel Spacing="3">
+                            <TextBlock Text="登录" FontSize="18" FontWeight="SemiBold" />
+                            <TextBlock Text="选择要登录的平台，登录状态会实时同步" FontSize="11" Opacity="0.55" />
+                        </StackPanel>
+                        <Button
+                            Width="30"
+                            Height="30"
+                            Padding="0"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Top"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            CornerRadius="8"
+                            Click="CloseLoginPlatform_Click"
+                            ToolTipService.ToolTip="关闭"
+                            AutomationProperties.AutomationId="PracticeLoginPlatformCloseButton">
+                            <FontIcon Glyph="&#xE711;" FontSize="12" />
+                        </Button>
+                    </Grid>
+                    <Button
+                        Tag="luogu"
+                        Height="60"
+                        Padding="14,0"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Stretch"
+                        CornerRadius="10"
+                        Click="LoginPlatformChoice_Click"
+                        AutomationProperties.AutomationId="PracticeLoginPlatformLuogu">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Image x:Name="LoginPlatformLuoguIcon" Grid.Column="0" Width="26" Height="26" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="洛谷" FontSize="14" FontWeight="SemiBold" />
+                                <TextBlock x:Name="LoginPlatformLuoguState" Text="未登录" FontSize="11" Opacity="0.55" />
+                            </StackPanel>
+                            <FontIcon Grid.Column="2" Glyph="&#xE76C;" FontSize="12" Opacity="0.35" VerticalAlignment="Center" />
+                        </Grid>
+                    </Button>
+                    <Button
+                        Tag="atcoder"
+                        Height="60"
+                        Padding="14,0"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Stretch"
+                        CornerRadius="10"
+                        Click="LoginPlatformChoice_Click"
+                        AutomationProperties.AutomationId="PracticeLoginPlatformAtCoder">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Image x:Name="LoginPlatformAtCoderIcon" Grid.Column="0" Width="26" Height="26" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="AtCoder" FontSize="14" FontWeight="SemiBold" />
+                                <TextBlock x:Name="LoginPlatformAtCoderState" Text="未登录" FontSize="11" Opacity="0.55" />
+                            </StackPanel>
+                            <FontIcon Grid.Column="2" Glyph="&#xE76C;" FontSize="12" Opacity="0.35" VerticalAlignment="Center" />
+                        </Grid>
+                    </Button>
+                    <Button
+                        Tag="nowcoder"
+                        Height="60"
+                        Padding="14,0"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Stretch"
+                        CornerRadius="10"
+                        Click="LoginPlatformChoice_Click"
+                        AutomationProperties.AutomationId="PracticeLoginPlatformNowCoder">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Image x:Name="LoginPlatformNowCoderIcon" Grid.Column="0" Width="26" Height="26" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="牛客" FontSize="14" FontWeight="SemiBold" />
+                                <TextBlock x:Name="LoginPlatformNowCoderState" Text="未登录" FontSize="11" Opacity="0.55" />
+                            </StackPanel>
+                            <FontIcon Grid.Column="2" Glyph="&#xE76C;" FontSize="12" Opacity="0.35" VerticalAlignment="Center" />
+                        </Grid>
+                    </Button>
+                </StackPanel>
             </Border>
         </Grid>
 

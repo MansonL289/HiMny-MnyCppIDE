@@ -1,10 +1,15 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <UserControl
     x:Class="WinUI3Shell.SettingsView"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <UserControl.Resources>
+        <!-- 界面图标统一用系统实际存在的图标字体（Windows 10 无 Segoe Fluent Icons） -->
+        <Style TargetType="FontIcon">
+            <Setter Property="FontFamily" Value="{StaticResource IconFontFamily}" />
+        </Style>
+
         <!-- 分组卡片：只负责圆角、描边和背景，内边距交给行控制 -->
         <Style x:Key="SettingsCardStyle" TargetType="Border">
             <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
@@ -30,7 +35,7 @@
 
         <!-- 行左侧图标 -->
         <Style x:Key="SettingIconStyle" TargetType="FontIcon">
-            <Setter Property="FontFamily" Value="Segoe Fluent Icons" />
+            <Setter Property="FontFamily" Value="{StaticResource IconFontFamily}" />
             <Setter Property="FontSize" Value="20" />
             <Setter Property="Width" Value="20" />
             <Setter Property="VerticalAlignment" Value="Center" />
@@ -229,15 +234,18 @@
                                     <FontIcon Grid.Column="0" Glyph="&#xE8A3;" Style="{StaticResource SettingIconStyle}" />
                                     <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
                                         <TextBlock Text="界面缩放" Style="{StaticResource SettingLabelStyle}" />
-                                        <TextBlock Text="整体放大或缩小界面文字与控件" Style="{StaticResource SettingDescriptionStyle}" />
+                                        <TextBlock Text="编辑器与刷题内容，每档 25%（4K 默认 100%）" Style="{StaticResource SettingDescriptionStyle}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                         <!-- 上下限在代码里赋值：XAML 解析时先设 Minimum 会直接抛异常 -->
                                         <Slider
                                             x:Name="UiZoomSlider"
                                             Width="200"
-                                            StepFrequency="5"
-                                            SnapsTo="Ticks"
+                                            StepFrequency="25"
+                                            TickFrequency="25"
+                                            SmallChange="25"
+                                            LargeChange="25"
+                                            SnapsTo="StepValues"
                                             ValueChanged="UiZoomSlider_ValueChanged" />
                                         <TextBlock
                                             x:Name="UiZoomValueText"
@@ -1093,7 +1101,7 @@
                                     <TextBlock Text="MnyC++ IDE" Style="{StaticResource SubtitleTextBlockStyle}" />
                                     <TextBlock
                                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                        Text="版本 Beta_1.2.20261118" />
+                                        Text="版本 内测-20261118" />
                                 </StackPanel>
                             </Grid>
                         </Border>

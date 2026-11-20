@@ -908,7 +908,8 @@ require(['vs/editor/editor.main'], function () {
       return;
     }
 
-    // 大文件模式：关掉补全、悬浮、括号着色等重型特性
+    // 大文件模式：关掉补全、悬浮等重型特性。
+    // 括号配对着色和标识符高亮是用户在设置里显式选择的，这里不能反向覆盖
     editor.updateOptions(Object.assign({}, base, {
       wordWrap: 'off',
       minimap: { enabled: false },
@@ -918,10 +919,8 @@ require(['vs/editor/editor.main'], function () {
       wordBasedSuggestions: 'off',
       parameterHints: { enabled: false },
       hover: { enabled: false },
-      occurrencesHighlight: 'off',
       selectionHighlight: false,
       matchBrackets: 'never',
-      bracketPairColorization: { enabled: false },
       guides: { bracketPairs: false, indentation: false },
       codeLens: false,
       colorDecorators: false,
@@ -1028,9 +1027,19 @@ require(['vs/editor/editor.main'], function () {
 
   /* ---------- 分块接收（大文件单条消息发不过来） ---------- */
   let incomingFile = null;
+  let incomingFileTimer = 0;
+
+  function discardIncomingFile() {
+    if (incomingFileTimer) { clearTimeout(incomingFileTimer); incomingFileTimer = 0; }
+    incomingFile = null;
+  }
 
   function beginIncomingFile(path, name, largeFile) {
+    // 上一次分块若未正常结束（缺 openFileEnd），先丢弃，避免 chunks 长期滞留内存
+    discardIncomingFile();
     incomingFile = { path: path, name: name, largeFile: !!largeFile, chunks: [] };
+    // 兜底：30s 内未完成则放弃这次接收
+    incomingFileTimer = setTimeout(discardIncomingFile, 30000);
   }
 
   function appendIncomingChunk(text) {
@@ -1040,7 +1049,7 @@ require(['vs/editor/editor.main'], function () {
   function endIncomingFile() {
     if (!incomingFile) { return; }
     const file = incomingFile;
-    incomingFile = null;
+    discardIncomingFile();
     openFile(file.path, file.name, file.chunks.join(''), file.largeFile);
   }
 
@@ -1349,15 +1358,18 @@ require(['vs/editor/editor.main'], function () {
   }
 
   /* Ctrl + '+' / '-'：缩放整个编辑器界面（标签栏、终端、编辑器一起放大缩小） */
+  function normalizeUiZoom(zoom) {
+    if (typeof zoom !== 'number' || !Number.isFinite(zoom)) { return 1; }
+    return Math.min(2, Math.max(0.5, Math.round(zoom / 0.25) * 0.25));
+  }
+
   function applyUiZoom(zoom) {
-    document.documentElement.style.zoom = zoom;
+    document.documentElement.style.zoom = normalizeUiZoom(zoom);
     editor.layout();
   }
 
   function changeUiZoom(delta) {
-    const zoom = delta === 0
-      ? 1
-      : Math.min(2, Math.max(0.5, Math.round((settings.uiZoom + delta * 0.1) * 100) / 100));
+    const zoom = normalizeUiZoom(delta === 0 ? 1 : settings.uiZoom + delta * 0.25);
     settings.uiZoom = zoom;
     applyUiZoom(zoom);
     writeSettings();
@@ -1962,7 +1974,7 @@ require(['vs/editor/editor.main'], function () {
     if (typeof msg.bracketColorization === 'boolean') { settings.bracketColorization = msg.bracketColorization; }
     if (typeof msg.stickyScroll === 'boolean') { settings.stickyScroll = msg.stickyScroll; }
     if (typeof msg.occurrencesHighlight === 'boolean') { settings.occurrencesHighlight = msg.occurrencesHighlight; }
-    if (typeof msg.uiZoom === 'number') { settings.uiZoom = msg.uiZoom; }
+    if (typeof msg.uiZoom === 'number') { settings.uiZoom = normalizeUiZoom(msg.uiZoom); }
     if (typeof msg.autoSave === 'boolean') { settings.autoSave = msg.autoSave; }
     if (typeof msg.autoSaveSeconds === 'number') { settings.autoSaveSeconds = msg.autoSaveSeconds; }
 

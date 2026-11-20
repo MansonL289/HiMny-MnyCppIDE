@@ -44,8 +44,8 @@ public sealed partial class SettingsView : UserControl
         _loading = true;
         try
         {
-            UiZoomSlider.Maximum = 200;
-            UiZoomSlider.Minimum = 50;
+            UiZoomSlider.Maximum = AppSettings.MaximumUiZoom * 100;
+            UiZoomSlider.Minimum = AppSettings.MinimumUiZoom * 100;
 
             AutoSaveSecondsBox.Maximum = 600;
             AutoSaveSecondsBox.Minimum = 5;
@@ -73,7 +73,7 @@ public sealed partial class SettingsView : UserControl
 
         AppThemeBox.SelectedIndex = IndexOfTheme(settings.AppTheme);
         EditorThemeBox.SelectedIndex = IndexOfEditorTheme(settings.EditorTheme);
-        UiZoomSlider.Value = Math.Clamp(settings.UiZoom * 100, 50, 200);
+        UiZoomSlider.Value = AppSettings.NormalizeUiZoom(settings.UiZoom) * 100;
         UpdateZoomText();
 
         AutoSaveSwitch.IsOn = settings.AutoSave;
@@ -135,7 +135,7 @@ public sealed partial class SettingsView : UserControl
         WordWrapBox.SelectedIndex = IndexOfWordWrap(settings.EditorWordWrap);
         MinimapSwitch.IsOn = settings.EditorMinimap;
         FontSizeBox.Value = settings.EditorFontSize;
-        UiZoomSlider.Value = Math.Clamp(settings.UiZoom * 100, 50, 200);
+        UiZoomSlider.Value = AppSettings.NormalizeUiZoom(settings.UiZoom) * 100;
         UpdateZoomText();
 
         _loading = false;
@@ -303,7 +303,7 @@ public sealed partial class SettingsView : UserControl
 
     /* ---------------- 关于 ---------------- */
 
-    private const string CurrentVersion = "Beta_1.2.20261118";
+    private const string CurrentVersion = "内测-20261118";
     private const string TagsApi = "https://api.github.com/repos/MansonL289/HiMny-MnyCppIDE/tags";
 
     private static readonly HttpClient Http = CreateHttp();
@@ -396,12 +396,21 @@ public sealed partial class SettingsView : UserControl
 
     private void UiZoomSlider_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
     {
+        double zoom = AppSettings.NormalizeUiZoom(UiZoomSlider.Value / 100.0);
+        double percent = zoom * 100;
+        if (Math.Abs(UiZoomSlider.Value - percent) > 0.001)
+        {
+            // 键盘、UIA 或旧配置给出非档位值时，先归位；嵌套事件再统一保存。
+            UiZoomSlider.Value = percent;
+            return;
+        }
+
         UpdateZoomText();
         if (_loading)
         {
             return;
         }
-        _settings.UiZoom = Math.Round(UiZoomSlider.Value / 100.0, 2);
+        _settings.UiZoom = zoom;
         RaiseChanged();
     }
 
@@ -828,6 +837,9 @@ public sealed partial class SettingsView : UserControl
             fontFamily = _settings.EditorFontFamily,
             // 预览区高度只有 240，字号过大会把代码撑出可视区域，这里限高只影响预览
             fontSize = Math.Clamp(_settings.EditorFontSize, 10, 18),
+            fontLigatures = _settings.EditorFontLigatures,
+            bracketColorization = _settings.EditorBracketColorization,
+            occurrencesHighlight = _settings.EditorOccurrencesHighlight,
         });
         TemplateWebView.CoreWebView2.PostWebMessageAsJson(json);
     }

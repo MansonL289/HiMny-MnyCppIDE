@@ -173,6 +173,9 @@
           renderWhitespace: msg.renderWhitespace || 'selection',
           cursorStyle: msg.cursorStyle || 'line',
           cursorBlinking: msg.cursorBlinking || 'blink',
+          // 与主编辑器共用设置项：括号配对着色、标识符高亮
+          bracketPairColorization: { enabled: msg.bracketColorization !== false },
+          occurrencesHighlight: msg.occurrencesHighlight === false ? 'off' : 'singleFile',
         };
         editor.updateOptions(options);
         if (msg.theme) setTheme(msg.theme);

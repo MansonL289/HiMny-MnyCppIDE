@@ -123,6 +123,7 @@
 
   <script src="vendor/markdown-it.min.js"></script>
   <script src="vendor/katex/katex.min.js"></script>
+  <script src="vendor/purify.min.js"></script>
   <script>
     'use strict';
     const post = (payload) => {
@@ -229,6 +230,14 @@
           try { img.src = new URL(src, baseUrl || location.href).href; } catch (e) { /* ignore */ }
         }
       });
+      // 外链一律新窗口打开并加 noopener，防止反向标签劫持 / window.opener 攻击
+      root.querySelectorAll('a[href]').forEach((a) => {
+        const href = a.getAttribute('href') || '';
+        if (/^https?:/i.test(href)) {
+          a.setAttribute('target', '_blank');
+          a.setAttribute('rel', 'noopener noreferrer');
+        }
+      });
     }
 
     function render(payload) {
@@ -245,7 +254,10 @@
       const extracted = extractMath(source);
       let html = md.render(extracted.text);
       html = renderMath(html, extracted.maths);
-      contentEl.innerHTML = html;
+      // 题面来自远程 OJ 抓取，markdown-it 允许原始 HTML，必须消毒后再注入，防 XSS
+      contentEl.innerHTML = window.DOMPurify
+        ? DOMPurify.sanitize(html, { USE_PROFILES: { html: true, mathml: true }, ADD_ATTR: ['target', 'rel'] })
+        : html;
       absolutize(contentEl);
       addCopyButtons();
       statusEl.style.display = 'none';

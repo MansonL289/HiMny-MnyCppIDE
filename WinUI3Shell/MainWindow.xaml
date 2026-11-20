@@ -32,6 +32,11 @@
         </Grid.RowDefinitions>
 
         <Grid.Resources>
+            <!-- 界面图标统一用系统实际存在的图标字体（Windows 10 无 Segoe Fluent Icons） -->
+            <Style TargetType="FontIcon">
+                <Setter Property="FontFamily" Value="{StaticResource IconFontFamily}" />
+            </Style>
+
             <Style x:Key="ActivityBarButtonStyle" TargetType="Button">
                 <Setter Property="Width" Value="40" />
                 <Setter Property="Height" Value="40" />

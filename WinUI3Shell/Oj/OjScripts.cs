@@ -226,4 +226,149 @@ internal static class OjScripts
   window.addEventListener('load', snapshotState);
 })();
 """;
+
+    /// <summary>
+    /// 登录浮层专用：隐藏站点顶部导航、侧边栏、页脚（含备案号）等与登录无关的元素，
+    /// 只保留居中的登录表单区域。单页应用会在路由切换后重绘，因此持续监听 DOM 变化。
+    /// </summary>
+    public const string LoginCleanup = """
+(function () {
+  var HIDE = [
+    'header', 'nav', 'footer', 'aside',
+    '#lfe-header', '#lfe-footer', '.lfe-header', '.lfe-footer',
+    '.l-header', '.l-footer', '.l-nav', '.l-sidebar', '.lg-header', '.lg-footer',
+    '.navbar', '.navbar-right', '.navigation', '.site-header', '.site-footer',
+    '.site-nav', '.main-nav', '.top-nav', '.topbar', '.side-bar',
+    '.nowcoder-header', '.nc-header', '.nc-footer', '.nc-sidebar',
+    '.copyright', '.footer-copyright', '.beian', '[class*="beian"]',
+    '[class*="copyright"]', '[class*="license"]',
+    '[class*="statement"]', '[class*="icp"]', '[id*="footer"]'
+  ].join(',');
+  var CSS = HIDE + '{display:none !important;}' +
+    'html,body{overflow-x:hidden !important;background:transparent !important;}' +
+    '.container,.main,.content,#main,.wrapper{padding-top:0 !important;margin-top:0 !important;}';
+
+  function ensureStyle() {
+    if (document.getElementById('mny-login-clean')) { return; }
+    var style = document.createElement('style');
+    style.id = 'mny-login-clean';
+    style.textContent = CSS;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  // 备案号/版权声明通常放在自定义页脚容器里（未必是 footer 标签）。
+  // 向上找到整段说明文字所在的块并隐藏，但绝不隐藏包含输入框或按钮的表单容器。
+  function stripBeian() {
+    var nodes = document.querySelectorAll('div,section,p,span,a,ul,li');
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      if (el.querySelector('input,textarea,button,form')) { continue; }
+      var text = (el.textContent || '').trim();
+      if (!text || text.length > 400) { continue; }
+      if (!/(ICP\s*备|公安\s*备|备案号|增值电信业务|All rights reserved|©\s*\d{4})/i.test(text)) { continue; }
+
+      var target = el;
+      while (target.parentElement &&
+             !target.parentElement.querySelector('input,textarea,button,form') &&
+             (target.parentElement.textContent || '').length < 600) {
+        target = target.parentElement;
+      }
+
+      target.style.setProperty('display', 'none', 'important');
+    }
+  }
+
+  function run() { ensureStyle(); stripBeian(); }
+
+  var pending = false;
+  function schedule() {
+    if (pending) { return; }
+    pending = true;
+    setTimeout(function () { pending = false; run(); }, 300);
+  }
+
+  run();
+  document.addEventListener('DOMContentLoaded', run);
+  window.addEventListener('load', run);
+  try {
+    new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true });
+  } catch (e) { }
+  setTimeout(run, 400);
+  setTimeout(run, 1200);
+  setTimeout(run, 2400);
+})();
+""";
+
+    /// <summary>
+    /// 洛谷题目列表 HTML 页：读取每一行的题号与答题状态（status 列）。
+    /// 行结构：.row-wrap > .row，内含 .status / .pid / .title 等列（与官网题目列表一致）。
+    /// 返回 { items: [{ id, state }] }，state 取 accepted / wrong / none。
+    /// </summary>
+    public const string LuoguAnswerStatus = """
+(function () {
+  function norm(v) { return (v || '').toString().toLowerCase(); }
+
+  function stateOf(cell) {
+    if (!cell) { return 'none'; }
+    var anchor = cell.querySelector('a');
+    var nodes = cell.querySelectorAll('*');
+    var text = (cell.textContent || '').replace(/\s+/g, ' ').trim();
+    var bucket = norm(cell.className) + ' ' + norm(anchor ? anchor.className : '');
+    for (var i = 0; i < nodes.length; i++) {
+      bucket += ' ' + norm(nodes[i].className) +
+        ' ' + norm(nodes[i].getAttribute('data-status')) +
+        ' ' + norm(nodes[i].getAttribute('title')) +
+        ' ' + norm(nodes[i].getAttribute('aria-label'));
+    }
+    var all = bucket + ' ' + norm(text) + ' ' + norm(cell.innerHTML);
+
+    // 没有任何子节点也没有文字，说明这一题没有作答记录
+    if (nodes.length === 0 && !text) { return 'none'; }
+
+    // 先判断答错：避免 unaccepted 之类的类名命中 accepted
+    if (/(unaccepted|notaccepted|wrong|incorrect|failed|failure|error|rejected|unac|\bwa\b|答错|未通过|未答对)/.test(all)) {
+      return 'wrong';
+    }
+    if (/(accepted|correct|passed|success|solved|\bac\b|\bok\b|已通过|已答对|通过)/.test(all)) {
+      return 'accepted';
+    }
+
+    // 图标可能直接内联绿色/红色（svg fill 或 style 颜色）
+    if (/#(2fa84f|52c41a|00b42a|19be6b|67c23a)/i.test(cell.innerHTML || '')) { return 'accepted'; }
+    if (/#(f5222d|ff4d4f|e74c3c|d13438|f56c6c)/i.test(cell.innerHTML || '')) { return 'wrong'; }
+
+    // 类名和文字都没有明确特征时，用状态图标的实际颜色兜底（绿=通过，红=答错）
+    var color = '';
+    try { color = getComputedStyle(anchor || cell).color || ''; } catch (e) { }
+    var m = /rgba?\((\d+)[^\d]+(\d+)[^\d]+(\d+)/.exec(color);
+    if (m) {
+      var r = +m[1], g = +m[2], b = +m[3];
+      if (g > 110 && g > r + 30 && g > b + 20) { return 'accepted'; }
+      if (r > 140 && r > g + 40) { return 'wrong'; }
+    }
+    return 'none';
+  }
+
+  var rows = document.querySelectorAll('.row-wrap div.row');
+  if (!rows.length) { rows = document.querySelectorAll('div.row'); }
+
+  var items = [];
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    var pidEl = row.querySelector('.pid');
+    var pid = pidEl ? (pidEl.getAttribute('title') || pidEl.textContent || '').trim() : '';
+    if (!pid) {
+      var link = row.querySelector('.title a') || row.querySelector('a[href*="/problem/"]');
+      if (link) {
+        var hm = /\/problem\/([A-Za-z]+[0-9][A-Za-z0-9_]*)/.exec(link.getAttribute('href') || '');
+        if (hm) { pid = hm[1]; }
+      }
+    }
+    if (!pid) { continue; }
+    items.push({ id: pid.toUpperCase(), state: stateOf(row.querySelector('.status')) });
+  }
+
+  return { items: items };
+})()
+""";
 }
