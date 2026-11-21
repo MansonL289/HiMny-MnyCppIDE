@@ -347,6 +347,10 @@ public enum OjSortMode
     DifficultyDesc,
     /// <summary>标题字母升序。</summary>
     TitleAsc,
+    /// <summary>题号升序（P2 排在 P1001 前）。</summary>
+    IdAsc,
+    /// <summary>题号降序。</summary>
+    IdDesc,
 }
 
 internal static class OjSorter
@@ -366,9 +370,43 @@ internal static class OjSorter
             OjSortMode.DifficultyAsc => rest.OrderBy(i => i.Difficulty < 0 ? int.MaxValue : i.Difficulty),
             OjSortMode.DifficultyDesc => rest.OrderByDescending(i => i.Difficulty),
             OjSortMode.TitleAsc => rest.OrderBy(i => i.Title, StringComparer.OrdinalIgnoreCase),
+            OjSortMode.IdAsc => rest.OrderBy(i => i.Id, Comparer<string>.Create(CompareId)),
+            OjSortMode.IdDesc => rest.OrderByDescending(i => i.Id, Comparer<string>.Create(CompareId)),
             _ => rest,
         };
         return starred.Concat(sortedRest);
+    }
+
+    /// <summary>题号比较：字母部分忽略大小写，数字部分按数值比较（P2 &lt; P1001）。</summary>
+    private static int CompareId(string? a, string? b)
+    {
+        a ??= string.Empty;
+        b ??= string.Empty;
+        int i = 0;
+        int j = 0;
+        while (i < a.Length && j < b.Length)
+        {
+            if (char.IsDigit(a[i]) && char.IsDigit(b[j]))
+            {
+                int si = i;
+                int sj = j;
+                while (i < a.Length && char.IsDigit(a[i])) i++;
+                while (j < b.Length && char.IsDigit(b[j])) j++;
+                string na = a.Substring(si, i - si).TrimStart('0');
+                string nb = b.Substring(sj, j - sj).TrimStart('0');
+                if (na.Length != nb.Length) return na.Length - nb.Length;
+                int cmp = string.CompareOrdinal(na, nb);
+                if (cmp != 0) return cmp;
+                continue;
+            }
+
+            int cc = char.ToUpperInvariant(a[i]).CompareTo(char.ToUpperInvariant(b[j]));
+            if (cc != 0) return cc;
+            i++;
+            j++;
+        }
+
+        return (a.Length - i) - (b.Length - j);
     }
 }
 

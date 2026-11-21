@@ -300,6 +300,103 @@ internal static class OjScripts
 """;
 
     /// <summary>
+    /// 洛谷提交页：只读提取完整代码。优先编辑器 API，避免把 Monaco 可视行当全文。
+    /// 返回 { code }、{ loginRequired: true } 或 { error }。
+    /// </summary>
+    public const string LuoguSubmitCode = """
+(function () {
+  try {
+    var nav = document.querySelector('.user-nav');
+    if (nav) {
+      var links = nav.querySelectorAll('a');
+      for (var i = 0; i < links.length; i++) {
+        var text = (links[i].textContent || '').trim();
+        if (text === '登录' || text === '注册') {
+          return { loginRequired: true };
+        }
+      }
+    }
+    if (location.pathname.indexOf('/auth/login') >= 0 || document.querySelector('input[type="password"]')) {
+      return { loginRequired: true };
+    }
+
+    var root = document.querySelector('#submit') || document;
+    function inside(node) {
+      return root === document || !!(node && root.contains(node));
+    }
+    function result(value) {
+      return { code: typeof value === 'string' ? value : '' };
+    }
+
+    // Monaco：getValue 返回 model 全文，不能使用 .view-lines 的文本。
+    if (window.monaco && monaco.editor) {
+      if (typeof monaco.editor.getEditors === 'function') {
+        var editors = monaco.editor.getEditors();
+        for (var e = 0; e < editors.length; e++) {
+          var editor = editors[e];
+          var dom = typeof editor.getDomNode === 'function' ? editor.getDomNode() : null;
+          if (!inside(dom)) { continue; }
+          var editorModel = typeof editor.getModel === 'function' ? editor.getModel() : null;
+          if (editorModel && typeof editorModel.getValue === 'function') {
+            return result(editorModel.getValue());
+          }
+        }
+      }
+
+      if (typeof monaco.editor.getModels === 'function') {
+        var models = monaco.editor.getModels();
+        if (models.length === 1 && typeof models[0].getValue === 'function') {
+          return result(models[0].getValue());
+        }
+        for (var m = 0; m < models.length; m++) {
+          if (typeof models[m].getValue !== 'function') { continue; }
+          var modelCode = models[m].getValue();
+          if (modelCode && modelCode.trim()) { return result(modelCode); }
+        }
+        if (models.length > 0 && typeof models[0].getValue === 'function') {
+          return result(models[0].getValue());
+        }
+      }
+    }
+
+    // CodeMirror 5：实例挂在 .CodeMirror 元素上。
+    var mirrors = root.querySelectorAll('.CodeMirror');
+    for (var c = 0; c < mirrors.length; c++) {
+      var mirror = mirrors[c].CodeMirror;
+      if (mirror && typeof mirror.getValue === 'function') {
+        return result(mirror.getValue());
+      }
+    }
+
+    // CodeMirror 6：旧版挂在 cmView/editorView，洛谷当前版本挂在 cmTile.view。
+    var contents = root.querySelectorAll('.cm-content');
+    for (var v = 0; v < contents.length; v++) {
+      var holder = contents[v].cmView || contents[v].editorView ||
+        (contents[v].cmTile && contents[v].cmTile.view);
+      var view = holder && holder.view ? holder.view : holder;
+      if (view && view.state && view.state.doc && typeof view.state.doc.toString === 'function') {
+        return result(view.state.doc.toString());
+      }
+    }
+
+    // 原生输入框回退；排除 Monaco/CodeMirror 的按键接收框，它们不一定保存全文。
+    var selectors = ['textarea[name="code"]', 'textarea#code', 'textarea[name="source"]', 'textarea'];
+    for (var s = 0; s < selectors.length; s++) {
+      var areas = root.querySelectorAll(selectors[s]);
+      for (var a = 0; a < areas.length; a++) {
+        if (areas[a].closest('.monaco-editor,.CodeMirror,.cm-editor')) { continue; }
+        return result(areas[a].value);
+      }
+    }
+
+    return { error: '未找到洛谷提交页代码输入框' };
+  } catch (ex) {
+    return { error: '读取提交页编辑器失败：' + (ex && ex.message ? ex.message : String(ex)) };
+  }
+})()
+""";
+
+    /// <summary>
     /// 洛谷题目列表 HTML 页：读取每一行的题号与答题状态（status 列）。
     /// 行结构：.row-wrap > .row，内含 .status / .pid / .title 等列（与官网题目列表一致）。
     /// 返回 { items: [{ id, state }] }，state 取 accepted / wrong / none。
@@ -349,10 +446,38 @@ internal static class OjScripts
     return 'none';
   }
 
+  // 优先读页面内嵌 JSON：题目列表数据里带个人的提交/通过标记，比 class 猜测可靠
+  var jsonStates = {};
+  var debug = { keys: [], jsonCount: 0, first: null };
+  var tags = document.querySelectorAll('script[type="application/json"]');
+  for (var t = 0; t < tags.length; t++) {
+    var j = null;
+    try { j = JSON.parse(tags[t].textContent); } catch (e) { continue; }
+    var res = j && j.data && j.data.problems && j.data.problems.result;
+    if (!res || !res.length) { continue; }
+    debug.jsonCount = res.length;
+    debug.keys = Object.keys(res[0] || {});
+    debug.first = { status: res[0].status, submitted: res[0].submitted, accepted: res[0].accepted };
+    for (var r = 0; r < res.length; r++) {
+      var it = res[r];
+      var rid = ((it.problem && it.problem.pid) || it.pid || '').toString().toUpperCase();
+      if (!rid) { continue; }
+      var st = '';
+      if (it.accepted === true) { st = 'accepted'; }
+      else if (it.submitted === true) { st = 'wrong'; }
+      else if (typeof it.status === 'number') {
+        st = it.status >= 2 ? 'accepted' : (it.status === 1 ? 'wrong' : 'none');
+      }
+      if (st) { jsonStates[rid] = st; }
+    }
+    break;
+  }
+
   var rows = document.querySelectorAll('.row-wrap div.row');
   if (!rows.length) { rows = document.querySelectorAll('div.row'); }
 
   var items = [];
+  var seen = {};
   for (var i = 0; i < rows.length; i++) {
     var row = rows[i];
     var pidEl = row.querySelector('.pid');
@@ -365,10 +490,17 @@ internal static class OjScripts
       }
     }
     if (!pid) { continue; }
-    items.push({ id: pid.toUpperCase(), state: stateOf(row.querySelector('.status')) });
+    pid = pid.toUpperCase();
+    seen[pid] = 1;
+    items.push({ id: pid, state: jsonStates[pid] || stateOf(row.querySelector('.status')) });
   }
 
-  return { items: items };
+  // DOM 没解析出来、但 JSON 里有的题目也补上
+  for (var key in jsonStates) {
+    if (!seen[key]) { items.push({ id: key, state: jsonStates[key] }); }
+  }
+
+  return { items: items, debug: debug };
 })()
 """;
 }

@@ -58,9 +58,22 @@ internal static class LuoguTraining
 })()
 """;
 
-    /// <summary>读取 data.training 里的题目数组。</summary>
+    /// <summary>
+    /// 读取 data.training 里的题目数组，并从已登录页面的状态图标解析「已通过 / 未通过」。
+    /// 官网题单页登录后每行都有状态图标，这里按「包含且只包含该题号链接」的最近行来归属，
+    /// 避免读到相邻题目的状态。
+    /// </summary>
     public const string DetailScript = """
 (function () {
+  function pidOf(href) {
+    var m = /\/problem\/([A-Za-z0-9_]+)/.exec(href || '');
+    return m ? m[1] : '';
+  }
+
+  function truthy(v) {
+    return v === true || v === 1 || v === '1' || v === 'true';
+  }
+
   var tags = document.querySelectorAll('script[type="application/json"]');
   for (var i = 0; i < tags.length; i++) {
     var j = null;
@@ -69,17 +82,34 @@ internal static class LuoguTraining
     if (!tr) continue;
     var ps = tr.problems || [];
     var out = [];
+    var hits = 0;
     for (var k = 0; k < ps.length; k++) {
       var p = ps[k];
+      // 题单 JSON 里每道题自带提交/通过标记，登录时才是真实的个人状态
+      var accepted = truthy(p.accepted);
+      var submitted = accepted || truthy(p.submitted);
+      if (submitted) { hits++; }
       out.push({
         id: p.pid,
         title: p.name,
         difficulty: (typeof p.difficulty === 'number') ? p.difficulty : -1,
         submitCount: p.totalSubmit || 0,
-        acceptedCount: p.totalAccepted || 0
+        acceptedCount: p.totalAccepted || 0,
+        state: accepted ? 'accepted' : (submitted ? 'wrong' : 'none')
       });
     }
-    return { title: tr.name || '', items: out };
+    return {
+      title: tr.name || '',
+      items: out,
+      domHits: hits,
+      debug: {
+        href: location.href,
+        title: document.title,
+        hasUserLink: !!document.querySelector('a[href*="/user/"]'),
+        keys: Object.keys(ps[0] || {}),
+        first: ps.length ? { submitted: ps[0].submitted, accepted: ps[0].accepted } : null
+      }
+    };
   }
   if (document.querySelector('img[src*="captcha"],[class*="captcha"]') || /captcha|verification/i.test(document.title)) {
     return { items: [], captcha: true };

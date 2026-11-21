@@ -185,8 +185,8 @@ require(['vs/editor/editor.main'], function () {
   const CPP_SNIPPETS = [
     {
       label: 'main',
-      detail: 'int main()',
-      insertText: 'int main() {\n\t$0\n\treturn 0;\n}'
+      detail: 'main()',
+      insertText: 'main() {\n\t$0\n\treturn 0;\n}'
     },
     {
       label: 'for',
@@ -245,8 +245,8 @@ require(['vs/editor/editor.main'], function () {
     },
     {
       label: 'include',
-      detail: '#include <...>',
-      insertText: '#include <${1:iostream}>'
+      detail: 'include <...>',
+      insertText: 'include <${1:iostream}>'
     }
   ];
 

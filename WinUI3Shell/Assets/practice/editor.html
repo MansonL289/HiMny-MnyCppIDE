@@ -177,6 +177,14 @@
           bracketPairColorization: { enabled: msg.bracketColorization !== false },
           occurrencesHighlight: msg.occurrencesHighlight === false ? 'off' : 'singleFile',
         };
+        // 代码补全/参数提示/悬浮：设置里改了要立刻生效，不能等重开
+        const suggest = msg.suggest !== false;
+        options.quickSuggestions = suggest ? { other: true, comments: false, strings: false } : false;
+        options.suggestOnTriggerCharacters = suggest;
+        options.wordBasedSuggestions = suggest ? true : 'off';
+        options.suggest = { showKeywords: suggest, showSnippets: suggest };
+        options.parameterHints = { enabled: msg.parameterHints !== false };
+        options.hover = { enabled: msg.hover !== false };
         editor.updateOptions(options);
         if (msg.theme) setTheme(msg.theme);
       }

@@ -1063,6 +1063,8 @@
                                         <ComboBoxItem Content="难度升序" Tag="DifficultyAsc" />
                                         <ComboBoxItem Content="难度降序" Tag="DifficultyDesc" />
                                         <ComboBoxItem Content="标题字母" Tag="TitleAsc" />
+                                        <ComboBoxItem Content="编号升序" Tag="IdAsc" />
+                                        <ComboBoxItem Content="编号降序" Tag="IdDesc" />
                                     </ComboBox>
                                 </Grid>
                             </StackPanel>

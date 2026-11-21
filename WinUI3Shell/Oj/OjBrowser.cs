@@ -98,6 +98,33 @@ public sealed class OjBrowser
             var navigation = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             _navigation = navigation;
 
+            // 只有 #fragment 不同的跳转不会触发 NavigationCompleted，
+            // 照旧等 30 秒超时会让“答题代码替换”白等半分钟，这里直接改 hash。
+            bool fragmentOnly = IsSamePageDifferentFragment(core.Source, url);
+            if (fragmentOnly)
+            {
+                try
+                {
+                    await core.ExecuteScriptAsync("location.href=" + System.Text.Json.JsonSerializer.Serialize(url));
+                }
+                catch (Exception ex)
+                {
+                    _navigation = null;
+                    return ErrorNode(ex);
+                }
+
+                _navigation = null;
+                await Task.Delay(Math.Max(settleMs, 500), cancellationToken);
+                try
+                {
+                    return ParseScriptResult(await core.ExecuteScriptAsync(script));
+                }
+                catch (Exception ex)
+                {
+                    return ErrorNode(ex);
+                }
+            }
+
             try
             {
                 core.Navigate(url);
@@ -137,6 +164,22 @@ public sealed class OjBrowser
         {
             _gate.Release();
         }
+    }
+
+    /// <summary>同域名同路径、仅片段（#hash）不同：WebView2 视为同文档跳转，不会发导航完成事件。</summary>
+    private static bool IsSamePageDifferentFragment(string current, string target)
+    {
+        if (string.IsNullOrEmpty(current) || current == "about:blank")
+        {
+            return false;
+        }
+
+        return Uri.TryCreate(current, UriKind.Absolute, out Uri? now) &&
+               Uri.TryCreate(target, UriKind.Absolute, out Uri? next) &&
+               string.Equals(now.Scheme, next.Scheme, StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(now.Host, next.Host, StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(now.AbsolutePath, next.AbsolutePath, StringComparison.Ordinal) &&
+               !string.Equals(now.Fragment, next.Fragment, StringComparison.Ordinal);
     }
 
     /// <summary>把异常包装成调用方认识的 error 节点。</summary>

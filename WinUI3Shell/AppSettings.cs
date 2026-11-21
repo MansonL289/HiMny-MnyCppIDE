@@ -167,7 +167,7 @@ public sealed class AppSettings
     /// <summary>随机抽题难度：any / easy / medium / hard / expert。</summary>
     public string PracticeDifficulty { get; set; } = "any";
 
-    /// <summary>搜索结果默认排序：SubmitAsc / SubmitDesc / PassRateAsc / PassRateDesc / DifficultyAsc / DifficultyDesc / TitleAsc。</summary>
+    /// <summary>搜索结果默认排序：SubmitAsc / SubmitDesc / PassRateAsc / PassRateDesc / DifficultyAsc / DifficultyDesc / TitleAsc / IdAsc / IdDesc。</summary>
     public string PracticeSortMode { get; set; } = "SubmitAsc";
 
     public static AppSettings Load() => Load(out _);
