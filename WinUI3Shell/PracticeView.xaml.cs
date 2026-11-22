@@ -772,7 +772,6 @@ public sealed partial class PracticeView : UserControl
         _luoguSortSyncing = true;
         try
         {
-            SetSortComboByTag(LuoguSortBox, mode);
             SetSortComboByTag(LuoguResultSortBox, mode);
             SetSortComboByTag(SortComboBox, mode);
         }
@@ -798,9 +797,6 @@ public sealed partial class PracticeView : UserControl
             box.SelectedIndex = 0;
         }
     }
-
-    private void LuoguSortBox_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
-        ApplySharedSort(LuoguSortBox);
 
     private void LuoguResultSortBox_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
         ApplySharedSort(LuoguResultSortBox);
@@ -3370,6 +3366,144 @@ public sealed partial class PracticeView : UserControl
         LoginPlatformOverlay.Visibility = Visibility.Collapsed;
     }
 
+    /// <summary>从 OJ 的主页地址推出 Cookie 域名（去掉 www. 前缀）。</summary>
+    private static string HostOf(OjDefinition oj)
+    {
+        try
+        {
+            string host = new Uri(oj.HomeUrl).Host.TrimStart('.');
+            if (host.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
+            {
+                host = host[4..];
+            }
+
+            return host;
+        }
+        catch (Exception)
+        {
+            return string.Empty;
+        }
+    }
+
+    private static void WriteCookiesToWebView(CoreWebView2 core, List<EdgeCookieImporter.CookieRow> cookies)
+    {
+        foreach (EdgeCookieImporter.CookieRow item in cookies)
+        {
+            CoreWebView2Cookie cookie = core.CookieManager.CreateCookie(item.Name, item.Value, item.Host, item.Path);
+            cookie.IsSecure = item.Secure;
+            cookie.IsHttpOnly = item.HttpOnly;
+            cookie.Expires = item.Expires;
+            core.CookieManager.AddOrUpdateCookie(cookie);
+        }
+    }
+
+    /// <summary>导入单个指定平台的浏览器 Cookie；失败可选自动打开网页登录。</summary>
+    private async Task<bool> ImportSinglePlatformAsync(OjDefinition oj, bool openWebLoginOnFail)
+    {
+        string host = HostOf(oj);
+        if (string.IsNullOrEmpty(host))
+        {
+            await ShowSimpleDialogAsync("从浏览器导入", $"{oj.Name} 没有可识别的主页域名。");
+            return false;
+        }
+
+        await EnsureLoginViewAsync();
+        CoreWebView2? core = LoginWebView.CoreWebView2;
+        if (core is null)
+        {
+            await ShowSimpleDialogAsync("从浏览器导入", "WebView2 不可用。");
+            return false;
+        }
+
+        Dictionary<string, List<EdgeCookieImporter.CookieRow>> byHost =
+            EdgeCookieImporter.LoadByHost(new[] { host }, out EdgeCookieImporter.Result result);
+        if (!byHost.TryGetValue(host, out List<EdgeCookieImporter.CookieRow>? cookies) || cookies.Count == 0)
+        {
+            if (openWebLoginOnFail)
+            {
+                await ShowSimpleDialogAsync("从浏览器导入", $"未读到 {oj.Name} 的登录态。\n{result.Message}\n将改用网页登录。");
+                LoginPlatformOverlay.Visibility = Visibility.Collapsed;
+                await ShowLoginAsync(oj);
+            }
+            else
+            {
+                await ShowSimpleDialogAsync("从浏览器导入", $"未读到 {oj.Name} 的登录态。{result.Message}");
+            }
+
+            return false;
+        }
+
+        WriteCookiesToWebView(core, cookies);
+        _loggedInOjs.Add(oj.Id);
+        UpdateLoginStatusVisuals();
+        await RefreshLoginStatusesAsync();
+
+        if (LoginOverlay.Visibility == Visibility.Visible)
+        {
+            // 已经在登录页里：直接走登录成功收尾
+            await CompleteLoginAsync(oj);
+        }
+
+        return true;
+    }
+
+    /// <summary>平台选择面板里的「从浏览器导入」入口：一次扫描所有浏览器、导入全部已登录平台。</summary>
+    private async void ImportEdgePlatform_Click(object sender, RoutedEventArgs e)
+    {
+        await EnsureLoginViewAsync();
+        CoreWebView2? core = LoginWebView.CoreWebView2;
+        if (core is null)
+        {
+            await ShowSimpleDialogAsync("从浏览器导入", "WebView2 不可用。");
+            return;
+        }
+
+        List<string> hosts = _config.Ojs
+            .Select(HostOf)
+            .Where(h => !string.IsNullOrEmpty(h))
+            .ToList();
+
+        Dictionary<string, List<EdgeCookieImporter.CookieRow>> byHost =
+            EdgeCookieImporter.LoadByHost(hosts, out EdgeCookieImporter.Result result);
+
+        if (result.Count == 0)
+        {
+            await ShowSimpleDialogAsync("从浏览器导入", result.Message);
+            return;
+        }
+
+        int platforms = 0;
+        foreach (OjDefinition oj in _config.Ojs)
+        {
+            string host = HostOf(oj);
+            if (host.Length > 0 &&
+                byHost.TryGetValue(host, out List<EdgeCookieImporter.CookieRow>? cookies) &&
+                cookies.Count > 0)
+            {
+                WriteCookiesToWebView(core, cookies);
+                _loggedInOjs.Add(oj.Id);
+                platforms++;
+            }
+        }
+
+        UpdateLoginStatusVisuals();
+        await RefreshLoginStatusesAsync();
+        LoginPlatformOverlay.Visibility = Visibility.Collapsed;
+        await ShowSimpleDialogAsync("从浏览器导入", result.Message + $"，已登录 {platforms} 个平台。");
+    }
+
+    /// <summary>网页登录浮层头部的「从浏览器导入」入口：只导入当前平台。</summary>
+    private async void ImportEdgeFromOverlay_Click(object sender, RoutedEventArgs e)
+    {
+        OjDefinition? oj = _loginOj ?? _currentOj;
+        if (oj is null)
+        {
+            return;
+        }
+
+        await ImportSinglePlatformAsync(oj, openWebLoginOnFail: false);
+    }
+
     private async void LoginPlatformChoice_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement element || element.Tag is not string ojId)
@@ -4662,12 +4796,17 @@ public sealed partial class PracticeView : UserControl
                 LoginRing.IsActive = false;
                 LoginRing.Visibility = Visibility.Collapsed;
 
-                // 洛谷会先返回一个只带脚本的验证页（正文为空），浏览器执行完校验后需要再加载一次；
-                // 不重载就会停在白屏，看起来像「加载不出来」
-                await RetryBlankLoginPageAsync(core);
+                // 提交页/评测记录页是完整网页，不能套用登录页的“删顶栏侧栏”清理，
+                // 否则会把正文容器一起藏掉，看起来像白屏
+                if (!_overlaySubmitMode)
+                {
+                    // 洛谷会先返回一个只带脚本的验证页（正文为空），浏览器执行完校验后需要再加载一次；
+                    // 不重载就会停在白屏，看起来像「加载不出来」
+                    await RetryBlankLoginPageAsync(core);
 
-                // 单页应用的页脚/备案号往往是脚本渲染的，加载完再补几次清理
-                _ = ApplyLoginCleanupAsync(core);
+                    // 单页应用的页脚/备案号往往是脚本渲染的，加载完再补几次清理
+                    _ = ApplyLoginCleanupAsync(core);
+                }
             };
             core.NavigationStarting += LoginWebView_NavigationStarting;
             if (!string.IsNullOrEmpty(_config.UserAgent))

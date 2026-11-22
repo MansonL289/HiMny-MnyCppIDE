@@ -740,7 +740,7 @@
                     <TextBox
                         x:Name="LuoguSearchBox"
                         Height="46"
-                        Padding="52,13,52,13"
+                        Padding="52,13,20,13"
                         PlaceholderText="搜索洛谷题目"
                         FontSize="15"
                         CornerRadius="12"
@@ -760,42 +760,20 @@
                         ToolTipService.ToolTip="搜索洛谷">
                         <FontIcon Glyph="&#xE721;" FontSize="15" />
                     </Button>
+                    </Grid>
                     <Button
-                        Width="36"
-                        Height="36"
-                        Margin="0,0,5,0"
+                        Grid.Column="1"
+                        Width="46"
+                        Height="46"
                         Padding="0"
-                        HorizontalAlignment="Right"
-                        VerticalAlignment="Center"
                         Background="Transparent"
                         BorderThickness="0"
-                        CornerRadius="8"
+                        CornerRadius="12"
                         Click="LuoguFilterButton_Click"
                         ToolTipService.ToolTip="洛谷官方筛选"
                         AutomationProperties.AutomationId="LuoguFilterButton">
-                        <FontIcon Glyph="&#xE71C;" FontSize="15" />
+                        <FontIcon Glyph="&#xE71C;" FontSize="16" />
                     </Button>
-                    </Grid>
-                    <ComboBox
-                        x:Name="LuoguSortBox"
-                        Grid.Column="1"
-                        Width="160"
-                        Height="46"
-                        FontSize="13"
-                        CornerRadius="12"
-                        SelectedIndex="0"
-                        SelectionChanged="LuoguSortBox_SelectionChanged"
-                        AutomationProperties.AutomationId="LuoguSortBox">
-                        <ComboBoxItem Content="提交量升序" Tag="SubmitAsc" />
-                        <ComboBoxItem Content="提交量降序" Tag="SubmitDesc" />
-                        <ComboBoxItem Content="通过率升序" Tag="PassRateAsc" />
-                        <ComboBoxItem Content="通过率降序" Tag="PassRateDesc" />
-                        <ComboBoxItem Content="难度升序" Tag="DifficultyAsc" />
-                        <ComboBoxItem Content="难度降序" Tag="DifficultyDesc" />
-                        <ComboBoxItem Content="标题字母" Tag="TitleAsc" />
-                        <ComboBoxItem Content="编号升序" Tag="IdAsc" />
-                        <ComboBoxItem Content="编号降序" Tag="IdDesc" />
-                    </ComboBox>
                 </Grid>
                 <Grid ColumnSpacing="10">
                     <Grid.ColumnDefinitions>
@@ -928,11 +906,15 @@
                     SelectedIndex="0"
                     SelectionChanged="LuoguResultSortBox_SelectionChanged"
                     AutomationProperties.AutomationId="LuoguResultSortBox">
-                    <ComboBoxItem Content="综合排序" Tag="" />
-                    <ComboBoxItem Content="编号 小 → 大" Tag="pid:asc" />
-                    <ComboBoxItem Content="编号 大 → 小" Tag="pid:desc" />
-                    <ComboBoxItem Content="难度 低 → 高" Tag="difficulty:asc" />
-                    <ComboBoxItem Content="难度 高 → 低" Tag="difficulty:desc" />
+                    <ComboBoxItem Content="提交量升序" Tag="SubmitAsc" />
+                    <ComboBoxItem Content="提交量降序" Tag="SubmitDesc" />
+                    <ComboBoxItem Content="通过率升序" Tag="PassRateAsc" />
+                    <ComboBoxItem Content="通过率降序" Tag="PassRateDesc" />
+                    <ComboBoxItem Content="难度升序" Tag="DifficultyAsc" />
+                    <ComboBoxItem Content="难度降序" Tag="DifficultyDesc" />
+                    <ComboBoxItem Content="标题字母" Tag="TitleAsc" />
+                    <ComboBoxItem Content="编号升序" Tag="IdAsc" />
+                    <ComboBoxItem Content="编号降序" Tag="IdDesc" />
                 </ComboBox>
             </Grid>
             <ListView
@@ -2181,6 +2163,30 @@
                             <FontIcon Grid.Column="2" Glyph="&#xE76C;" FontSize="12" Opacity="0.35" VerticalAlignment="Center" />
                         </Grid>
                     </Button>
+                    <Border Height="1" Margin="0,2,0,2" Background="{ThemeResource ControlStrokeColorDefaultBrush}" Opacity="0.4" />
+                    <Button
+                        Height="52"
+                        Padding="14,0"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Stretch"
+                        CornerRadius="10"
+                        Click="ImportEdgePlatform_Click"
+                        ToolTipService.ToolTip="扫描 Edge / Chrome / Brave 等浏览器，导入所有已登录平台"
+                        AutomationProperties.AutomationId="PracticeLoginPlatformImportEdge">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Grid.Column="0" Glyph="&#xE774;" FontSize="16" VerticalAlignment="Center" Opacity="0.75" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="从浏览器导入（推荐）" FontSize="14" FontWeight="SemiBold" />
+                                <TextBlock Text="扫描 Edge / Chrome / Brave，同步所有已登录平台" FontSize="11" Opacity="0.5" />
+                            </StackPanel>
+                            <FontIcon Grid.Column="2" Glyph="&#xE76C;" FontSize="12" Opacity="0.35" VerticalAlignment="Center" />
+                        </Grid>
+                    </Button>
                 </StackPanel>
             </Border>
         </Grid>
@@ -2219,6 +2225,19 @@
                                 Opacity="0.55" />
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                            <Button
+                                x:Name="LoginImportEdgeButton"
+                                Height="28"
+                                Padding="10,0"
+                                CornerRadius="8"
+                                Click="ImportEdgeFromOverlay_Click"
+                                ToolTipService.ToolTip="从 Edge / Chrome / Brave 导入当前平台的登录态"
+                                AutomationProperties.AutomationId="PracticeLoginImportEdgeButton">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE774;" FontSize="12" VerticalAlignment="Center" />
+                                    <TextBlock Text="从浏览器导入" FontSize="12" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
                             <ProgressRing
                                 x:Name="LoginRing"
                                 Width="16"
