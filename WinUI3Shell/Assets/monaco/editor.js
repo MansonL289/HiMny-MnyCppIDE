@@ -116,8 +116,6 @@ require(['vs/editor/editor.main'], function () {
     fontLigatures: settings.fontLigatures,
     wordWrap: settings.wordWrap,
     minimap: { enabled: settings.minimap },
-    // 行号左侧留出装订区，用来显示断点红点
-    glyphMargin: true,
     renderWhitespace: settings.whitespace,
     cursorStyle: settings.cursorStyle,
     cursorBlinking: settings.cursorBlinking,
@@ -1262,20 +1260,11 @@ require(['vs/editor/editor.main'], function () {
       if (candidate.path === path) { tab = candidate; break; }
     }
     if (!tab) { return; }
-    const wasUnsaved = !tab.path;
     tab.path = path;
     tab.name = name;
     tab.dirty = false;
     renderTabs();
     notifyTabs();
-
-    // 未保存时点的断点之前没有路径，保存后补登记
-    const savedBreakpoints = breakpointLines.get(tab.model.id);
-    if (wasUnsaved && savedBreakpoints) {
-      savedBreakpoints.forEach(function (line) {
-        post({ type: 'breakpointToggle', path: tab.path, line: line, enabled: true });
-      });
-    }
 
     // 批量保存中：继续保存下一个脏标签
     if (saveAllQueue !== null) {
@@ -1283,15 +1272,10 @@ require(['vs/editor/editor.main'], function () {
       return;
     }
 
-    // 保存完成后继续之前被拦截的检查/调试请求
-    if (pendingFileAction) {
-      const action = pendingFileAction;
-      pendingFileAction = null;
-      post({
-        type: action === 'check' ? 'checkRequest' : 'debugStartRequest',
-        path: tab.path,
-        name: tab.name
-      });
+    // 保存完成后继续之前被拦截的检查请求
+    if (pendingCheck) {
+      pendingCheck = false;
+      post({ type: 'checkRequest', path: tab.path, name: tab.name });
       return;
     }
 
@@ -1403,96 +1387,8 @@ require(['vs/editor/editor.main'], function () {
       case 'build': requestBuild('compile'); break;
       case 'run': requestBuild('run'); break;
       case 'buildRun': requestBuild('buildRun'); break;
-      case 'check': requestFileAction('check'); break;
-      case 'debugStart': requestFileAction('debugStart'); break;
+      case 'check': requestFileAction(); break;
       case 'saveAll': saveAll(); break;
-    }
-  }
-
-  /* ---------- 调试：断点 / 当前执行行 ---------- */
-
-  const breakpointLines = new Map();          // modelId -> Set<line>
-  const breakpointDecorationIds = new Map();  // modelId -> decoration ids
-
-  function modelForPath(path) {
-    if (!path) { return editor.getModel(); }
-    for (const tab of tabs) {
-      if (tab.path === path) { return tab.model; }
-    }
-    return null;
-  }
-
-  function renderBreakpoints(model) {
-    if (!model || model.isDisposed()) { return; }
-    const lines = breakpointLines.get(model.id);
-    const decorations = [];
-    if (lines) {
-      lines.forEach(function (line) {
-        decorations.push({
-          range: new monaco.Range(line, 1, line, 1),
-          options: { glyphMarginClassName: 'mny-breakpoint' }
-        });
-      });
-    }
-    const previous = breakpointDecorationIds.get(model.id) || [];
-    breakpointDecorationIds.set(model.id, model.deltaDecorations(previous, decorations));
-  }
-
-  function toggleBreakpoint(model, line) {
-    if (!model || !line) { return; }
-    let lines = breakpointLines.get(model.id);
-    if (!lines) { lines = new Set(); breakpointLines.set(model.id, lines); }
-    let enabled;
-    if (lines.has(line)) { lines.delete(line); enabled = false; }
-    else { lines.add(line); enabled = true; }
-    renderBreakpoints(model);
-
-    const tab = tabs.find(function (t) { return t.model === model; });
-    post({ type: 'breakpointToggle', path: tab ? tab.path : null, line: line, enabled: enabled });
-  }
-
-  /* 宿主打开文件时回传该文件已有的断点 */
-  function applyBreakpointList(path, lines) {
-    const model = modelForPath(path);
-    if (!model) { return; }
-    breakpointLines.set(model.id, new Set(lines || []));
-    renderBreakpoints(model);
-  }
-
-  editor.onMouseDown(function (e) {
-    const type = e.target && e.target.type;
-    if (type !== monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) { return; }
-    const line = (e.target.position && e.target.position.lineNumber) ||
-      (e.target.range && e.target.range.startLineNumber);
-    if (line) { toggleBreakpoint(editor.getModel(), line); }
-  });
-
-  let debugLineModel = null;
-  let debugLineIds = [];
-
-  function clearDebugLine() {
-    if (debugLineModel && !debugLineModel.isDisposed()) {
-      debugLineModel.deltaDecorations(debugLineIds, []);
-    }
-    debugLineModel = null;
-    debugLineIds = [];
-  }
-
-  function showDebugLine(path, line) {
-    clearDebugLine();
-    const model = modelForPath(path);
-    if (!model || !line) { return; }
-    debugLineModel = model;
-    debugLineIds = model.deltaDecorations([], [{
-      range: new monaco.Range(line, 1, line, 1),
-      options: {
-        isWholeLine: true,
-        className: 'mny-debug-line',
-        glyphMarginClassName: 'mny-debug-line-glyph'
-      }
-    }]);
-    if (editor.getModel() === model) {
-      editor.revealLineInCenterIfOutsideViewport(line);
     }
   }
 
@@ -1535,31 +1431,23 @@ require(['vs/editor/editor.main'], function () {
     editor.focus();
   }
 
-  /* ---------- 检查 / 调试：确保文件已保存后再请求宿主 ---------- */
+  /* ---------- 代码检查器：确保文件已保存后再请求宿主 ---------- */
 
-  let pendingFileAction = null;
+  let pendingCheck = false;
 
-  function requestFileAction(kind) {
+  function requestFileAction() {
     const tab = activeTab();
     if (!tab) {
       // 没有打开文件时交给宿主在面板里提示，不弹对话框打断输入
-      post({
-        type: kind === 'check' ? 'checkRequest' : 'debugStartRequest',
-        path: '',
-        name: null
-      });
+      post({ type: 'checkRequest', path: '', name: null });
       return;
     }
     if (!tab.path || tab.dirty) {
-      pendingFileAction = kind;
+      pendingCheck = true;
       requestSave(false);
       return;
     }
-    post({
-      type: kind === 'check' ? 'checkRequest' : 'debugStartRequest',
-      path: tab.path,
-      name: tab.name
-    });
+    post({ type: 'checkRequest', path: tab.path, name: tab.name });
   }
 
   /* ---------- 代码大纲 ---------- */
@@ -1946,9 +1834,6 @@ require(['vs/editor/editor.main'], function () {
         case 'reveal': revealPosition(msg.line, msg.column); break;
         case 'diagnostics': applyDiagnostics(msg.path, msg.items); break;
         case 'clearDiagnostics': clearDiagnostics(msg.path); break;
-        case 'debugLine': showDebugLine(msg.path, msg.line); break;
-        case 'debugLineClear': clearDebugLine(); break;
-        case 'breakpoints': applyBreakpointList(msg.path, msg.lines); break;
       }
     });
   }
@@ -2016,23 +1901,6 @@ require(['vs/editor/editor.main'], function () {
   /* 编辑器内的快捷键：Ctrl+N 新建、Ctrl+S 保存、Ctrl+Shift+S 另存为、Ctrl+W 关闭
      F12 编译、F10 运行、F11 编译并运行 */
   document.addEventListener('keydown', function (e) {
-    // 调试快捷键：F5 开始/继续、Shift+F5 停止、F7 单步跳过、F8 单步进入
-    if (!e.ctrlKey && !e.altKey) {
-      const debugKey = e.key.toLowerCase();
-      if (debugKey === 'f5') {
-        e.preventDefault();
-        e.stopPropagation();
-        post({ type: e.shiftKey ? 'debugStop' : 'debugContinue' });
-        return;
-      }
-      if (!e.shiftKey && (debugKey === 'f7' || debugKey === 'f8')) {
-        e.preventDefault();
-        e.stopPropagation();
-        post({ type: debugKey === 'f7' ? 'debugStepOver' : 'debugStepInto' });
-        return;
-      }
-    }
-
     if (!e.ctrlKey && !e.altKey && !e.shiftKey) {
       const buildKey = e.key.toLowerCase();
       if (buildKey === 'f12' || buildKey === 'f10' || buildKey === 'f11') {

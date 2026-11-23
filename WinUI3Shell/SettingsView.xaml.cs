@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Numerics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -28,6 +29,8 @@ public sealed partial class SettingsView : UserControl
     public SettingsView()
     {
         InitializeComponent();
+
+        VersionText.Text = $"版本 {CurrentVersion}";
 
         ApplyRanges();
 
@@ -303,7 +306,11 @@ public sealed partial class SettingsView : UserControl
 
     /* ---------------- 关于 ---------------- */
 
-    private const string CurrentVersion = "内测-20261118";
+    /// <summary>版本号取自 csproj 的 &lt;Version&gt;，安装包与关于页共用同一个值。</summary>
+    private static readonly string CurrentVersion =
+        typeof(SettingsView).Assembly.GetName().Version?.ToString(3) ?? "1.0.0";
+
+    private const string ReleasesApi = "https://api.github.com/repos/MansonL289/HiMny-MnyCppIDE/releases/latest";
     private const string TagsApi = "https://api.github.com/repos/MansonL289/HiMny-MnyCppIDE/tags";
 
     private static readonly HttpClient Http = CreateHttp();
@@ -342,16 +349,13 @@ public sealed partial class SettingsView : UserControl
 
         try
         {
-            string json = await Http.GetStringAsync(TagsApi);
-            JsonArray? tags = JsonNode.Parse(json)?.AsArray();
-            string? latest = tags?.Select(t => t?["name"]?.GetValue<string>())
-                .FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
+            string? latest = await FetchLatestVersionTagAsync();
 
             if (latest == null)
             {
                 UpdateText.Text = "没有读取到版本标签。";
             }
-            else if (latest.Equals(CurrentVersion, StringComparison.OrdinalIgnoreCase))
+            else if (NormalizeVersion(latest).Equals(NormalizeVersion(CurrentVersion), StringComparison.OrdinalIgnoreCase))
             {
                 UpdateText.Text = $"已是最新版本（{CurrentVersion}）。";
             }
@@ -360,8 +364,9 @@ public sealed partial class SettingsView : UserControl
                 UpdateText.Text = $"发现新版本：{latest}（当前 {CurrentVersion}）。";
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            AppLog.Error("检查更新失败", ex);
             UpdateText.Text = "检查失败，请稍后再试，或直接打开上面的更新链接。";
         }
         finally
@@ -369,6 +374,57 @@ public sealed partial class SettingsView : UserControl
             CheckRing.IsActive = false;
             CheckRing.Visibility = Visibility.Collapsed;
             CheckUpdateButton.IsEnabled = true;
+        }
+    }
+
+    /// <summary>优先读取正式 Release 的 tag；还没建 Release 时退回 tags 列表。</summary>
+    private static async Task<string?> FetchLatestVersionTagAsync()
+    {
+        try
+        {
+            string json = await Http.GetStringAsync(ReleasesApi);
+            string? tag = JsonNode.Parse(json)?["tag_name"]?.GetValue<string>();
+            if (!string.IsNullOrWhiteSpace(tag))
+            {
+                return tag;
+            }
+        }
+        catch (Exception)
+        {
+            // 仓库还没有 Release（404）或网络失败，继续尝试 tags
+        }
+
+        try
+        {
+            string json = await Http.GetStringAsync(TagsApi);
+            JsonArray? tags = JsonNode.Parse(json)?.AsArray();
+            return tags?.Select(t => t?["name"]?.GetValue<string>())
+                .FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>标签常见写法是 v1.0.0，比较前统一去掉前缀 v。</summary>
+    private static string NormalizeVersion(string value) => value.Trim().TrimStart('v', 'V');
+
+    private void OpenLogFolder_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Directory.CreateDirectory(AppLog.LogDirectory);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = AppLog.LogDirectory,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("打开日志目录失败", ex);
+            UpdateText.Text = "无法打开日志目录：" + AppLog.LogDirectory;
         }
     }
 

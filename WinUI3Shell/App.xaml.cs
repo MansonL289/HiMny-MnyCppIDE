@@ -1,6 +1,8 @@
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 
 namespace WinUI3Shell;
@@ -14,8 +16,44 @@ public partial class App : Application
     {
         InitializeComponent();
 
+        string version = typeof(App).Assembly.GetName().Version?.ToString(3) ?? "未知";
+        AppLog.Info($"启动 MnyC++ IDE {version}，系统 {Environment.OSVersion.VersionString}，目录 {AppContext.BaseDirectory}");
+
+        UnhandledException += OnUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            AppLog.Error("未处理的后台异常", e.ExceptionObject as Exception);
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            AppLog.Error("未观察的任务异常", e.Exception);
+            e.SetObserved();
+        };
+
         ConfigureWebView2Profile();
     }
+
+    /// <summary>兜底捕获界面线程异常：写日志并提示用户，避免进程无提示消失。</summary>
+    private void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
+    {
+        AppLog.Error("未处理的界面异常", e.Exception);
+        e.Handled = true;
+
+        try
+        {
+            MessageBoxW(
+                IntPtr.Zero,
+                "程序遇到异常，详细信息已写入日志：\n" + AppLog.CurrentFile + "\n\n建议保存工作后重启程序。",
+                "MnyC++ IDE",
+                0x00000010 /* MB_ICONERROR */);
+        }
+        catch (Exception)
+        {
+            // 提示失败时仍然保留日志
+        }
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int MessageBoxW(IntPtr hWnd, string text, string caption, uint type);
+
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {

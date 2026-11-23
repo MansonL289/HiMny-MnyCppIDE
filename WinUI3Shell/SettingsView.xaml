@@ -1102,8 +1102,8 @@
                                 <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
                                     <TextBlock Text="MnyC++ IDE" Style="{StaticResource SubtitleTextBlockStyle}" />
                                     <TextBlock
-                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                        Text="版本 内测-20261118" />
+                                        x:Name="VersionText"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                 </StackPanel>
                             </Grid>
                         </Border>
@@ -1179,6 +1179,21 @@
                                         VerticalAlignment="Center"
                                         Content="https://github.com/MansonL289/HiMny-MnyCppIDE/issues"
                                         NavigateUri="https://github.com/MansonL289/HiMny-MnyCppIDE/issues" />
+                                </Grid>
+
+                                <Rectangle Style="{StaticResource SettingDividerStyle}" />
+
+                                <Grid Style="{StaticResource SettingRowStyle}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <FontIcon Grid.Column="0" Glyph="&#xE8A5;" Style="{StaticResource SettingIconStyle}" />
+                                    <Button
+                                        Grid.Column="1"
+                                        HorizontalAlignment="Left"
+                                        Click="OpenLogFolder_Click"
+                                        Content="打开日志目录" />
                                 </Grid>
                             </StackPanel>
                         </Border>
