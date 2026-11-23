@@ -188,13 +188,3 @@ begin
   if DirExists(DataDir) then
     DelTree(DataDir, True, True, True);
 end;
-
-{ 装完仍检测不到 WebView2 运行时：给出明确提示（静默安装不打扰）
-  ssDone 在 [Run] 段执行完之后才触发，避免在引导安装器运行前误报 }
-procedure CurStepChanged(CurStep: TSetupStep);
-begin
-  if (CurStep = ssDone) and (not WizardSilent) and (not WebView2Installed()) then
-    MsgBox('未检测到 Microsoft Edge WebView2 运行时，编辑器与刷题功能需要它才能使用。' + #13#10 +
-      '请联网后重新运行安装包，或到 https://developer.microsoft.com/microsoft-edge/webview2/ 手动安装后重启程序。',
-      mbInformation, MB_OK);
-end;
